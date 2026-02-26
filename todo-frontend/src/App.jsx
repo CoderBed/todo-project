@@ -1,22 +1,80 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
-const API_BASE = "/api/todos";
+const API_TODOS = "/api/todos";
+const API_AUTH_LOGIN = "/api/auth/login";
+const API_AUTH_REGISTER = "/api/auth/register";
+
+function safeJson(res) {
+  return res
+    .json()
+    .catch(() => null);
+}
 
 async function readError(res) {
-  try {
-    const data = await res.json();
-    if (data?.errors) {
-      const firstKey = Object.keys(data.errors)[0];
-      if (firstKey) return data.errors[firstKey];
+  const data = await safeJson(res);
+
+  // our backend may return { errors: { field: "msg" } } or { errors: { field: ["msg"] } }
+  if (data?.errors && typeof data.errors === "object") {
+    const firstKey = Object.keys(data.errors)[0];
+    if (firstKey) {
+      const v = data.errors[firstKey];
+      if (Array.isArray(v)) return v[0] || `API hata: ${res.status}`;
+      if (typeof v === "string") return v;
     }
-    return data?.message || `API hata: ${res.status}`;
+  }
+
+  return data?.message || `API hata: ${res.status}`;
+}
+
+function getStoredToken() {
+  try {
+    // Backward/forward compatible: some steps/tools may store under `token`
+    return localStorage.getItem("todo_token") || localStorage.getItem("token") || "";
   } catch {
-    return `API hata: ${res.status}`;
+    return "";
   }
 }
 
-function App() {
+function storeToken(token) {
+  try {
+    if (token) {
+      // Keep both keys so older/newer frontends work without confusion
+      localStorage.setItem("todo_token", token);
+      localStorage.setItem("token", token);
+    } else {
+      localStorage.removeItem("todo_token");
+      localStorage.removeItem("token");
+    }
+  } catch {
+    // ignore
+  }
+}
+
+async function apiFetch(url, { token, ...opts } = {}) {
+  const headers = new Headers(opts.headers || {});
+
+  // If body is JSON, ensure content-type
+  if (opts.body && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json; charset=UTF-8");
+  }
+
+  // If caller didn't pass token explicitly, try to use stored token
+  const effectiveToken = token || getStoredToken();
+  if (effectiveToken) headers.set("Authorization", `Bearer ${effectiveToken}`);
+
+  const res = await fetch(url, { ...opts, headers });
+  return res;
+}
+
+export default function App() {
+  // --- Auth ---
+  const [token, setToken] = useState(() => getStoredToken());
+  const [authMode, setAuthMode] = useState("login"); // login | register
+  const [authEmail, setAuthEmail] = useState("");
+  const [authPassword, setAuthPassword] = useState("");
+
+  // --- Todo state ---
   const [todos, setTodos] = useState([]);
   const [error, setError] = useState("");
   const [newTitle, setNewTitle] = useState("");
@@ -32,47 +90,119 @@ function App() {
   const [draggingId, setDraggingId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
 
-  function showToast(message) {
-    setToast(message);
-    window.setTimeout(() => {
-      setToast("");
-    }, 2000);
-  }
-
-  async function persistOrder(nextTodos) {
-    try {
-      const ids = nextTodos.map((t) => t.id);
-      const res = await fetch(`${API_BASE}/reorder`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json; charset=UTF-8" },
-        body: JSON.stringify(ids),
-      });
-      if (!res.ok) throw new Error(await readError(res));
-      // UI order is already updated; no need to overwrite from response.
-    } catch (err) {
-      setError(err.message);
-    }
-  }
   const [editingId, setEditingId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [editingDueDate, setEditingDueDate] = useState("");
 
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
+  // Some browsers / custom CSS may prevent the native date picker from opening.
+  // Calling showPicker() (when available) forces it to open on a user gesture.
+  function openNativeDatePicker(e) {
+    const el = e?.currentTarget;
+    if (el && typeof el.showPicker === "function") {
+      try {
+        el.showPicker();
+      } catch {
+        // ignore
+      }
+    }
+  }
+
+  function showToast(message) {
+    setToast(message);
+    window.setTimeout(() => setToast(""), 2000);
+  }
+
+  function setTokenAndPersist(next) {
+    setToken(next);
+    storeToken(next);
+  }
+
+  function logout() {
+    setTokenAndPersist("");
+    setTodos([]);
+    setError("");
+    showToast("Çıkış yapıldı");
+  }
+
+  async function submitAuth(e) {
+    e.preventDefault();
+    const email = authEmail.trim();
+    const password = authPassword;
+    if (!email || !password) {
+      setError("Email ve şifre zorunlu.");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError("");
+
+      const url = authMode === "login" ? API_AUTH_LOGIN : API_AUTH_REGISTER;
+      const res = await apiFetch(url, {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (!res.ok) {
+        // register on existing user may return 409
+        const msg = await readError(res);
+        throw new Error(msg);
+      }
+
+      const data = await res.json();
+      if (!data?.token) throw new Error("Token alınamadı.");
+
+      setTokenAndPersist(data.token);
+      setAuthPassword("");
+      showToast(authMode === "login" ? "Giriş başarılı ✅" : "Kayıt başarılı ✅");
+    } catch (err) {
+      setError(err.message || "Bir hata oluştu.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Load todos when token changes
   useEffect(() => {
-    setLoading(true);
-    fetch(API_BASE)
-      .then(async (res) => {
+    if (!token) return;
+
+    (async () => {
+      try {
+        setLoading(true);
+        const res = await apiFetch(API_TODOS, { token });
+        if (res.status === 401 || res.status === 403) {
+          logout();
+          throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+        }
         if (!res.ok) throw new Error(await readError(res));
-        return res.json();
-      })
-      .then((data) => {
-        setTodos(data);
+
+        const data = await res.json();
+        setTodos(Array.isArray(data) ? data : []);
         setError("");
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, []);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  async function persistOrder(nextTodos) {
+    try {
+      const ids = nextTodos.map((t) => t.id);
+      const res = await apiFetch(`${API_TODOS}/reorder`, {
+        token,
+        method: "PUT",
+        body: JSON.stringify(ids),
+      });
+      if (!res.ok) throw new Error(await readError(res));
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   const visibleTodos = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -145,14 +275,19 @@ function App() {
     if (!title) return;
 
     try {
-      const res = await fetch(API_BASE, {
+      const res = await apiFetch(API_TODOS, {
+        token,
         method: "POST",
-        headers: { "Content-Type": "application/json; charset=UTF-8" },
         body: JSON.stringify({
           title,
           dueDate: newDueDate ? newDueDate : null,
         }),
       });
+
+      if (res.status === 401 || res.status === 403) {
+        logout();
+        throw new Error("Yetkin yok (403). Tekrar giriş yap.");
+      }
 
       if (!res.ok) throw new Error(await readError(res));
 
@@ -172,7 +307,16 @@ function App() {
     if (!ok) return;
 
     try {
-      const res = await fetch(`${API_BASE}/${id}`, { method: "DELETE" });
+      const res = await apiFetch(`${API_TODOS}/${id}`, {
+        token,
+        method: "DELETE",
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        logout();
+        throw new Error("Yetkin yok (403). Tekrar giriş yap.");
+      }
+
       if (!res.ok) throw new Error(await readError(res));
       setTodos((prev) => prev.filter((t) => t.id !== id));
       setError("");
@@ -184,7 +328,16 @@ function App() {
 
   async function toggleTodo(id) {
     try {
-      const res = await fetch(`${API_BASE}/${id}`, { method: "PUT" });
+      const res = await apiFetch(`${API_TODOS}/${id}`, {
+        token,
+        method: "PUT",
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        logout();
+        throw new Error("Yetkin yok (403). Tekrar giriş yap.");
+      }
+
       if (!res.ok) throw new Error(await readError(res));
       const updated = await res.json();
       setTodos((prev) => prev.map((t) => (t.id === id ? updated : t)));
@@ -205,14 +358,19 @@ function App() {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/${id}/title`, {
+      const res = await apiFetch(`${API_TODOS}/${id}/title`, {
+        token,
         method: "PUT",
-        headers: { "Content-Type": "application/json; charset=UTF-8" },
         body: JSON.stringify({
           title,
           dueDate: editingDueDate ? editingDueDate : null,
         }),
       });
+
+      if (res.status === 401 || res.status === 403) {
+        logout();
+        throw new Error("Yetkin yok (403). Tekrar giriş yap.");
+      }
 
       if (!res.ok) throw new Error(await readError(res));
 
@@ -226,6 +384,69 @@ function App() {
     } catch (err) {
       setError(err.message);
     }
+  }
+
+  // --- UI: If not logged in, show auth screen ---
+  if (!token) {
+    return (
+      <div className="app">
+        <div className="card">
+          {toast && <div className="toast">{toast}</div>}
+
+          <header className="header">
+            <div>
+              <h1 className="title">To-Do</h1>
+              <p className="subtitle">Giriş yap / kayıt ol</p>
+            </div>
+          </header>
+
+          <div className="filters">
+            <button
+              type="button"
+              className={authMode === "login" ? "btnFilter active" : "btnFilter"}
+              onClick={() => setAuthMode("login")}
+            >
+              Login
+            </button>
+            <button
+              type="button"
+              className={authMode === "register" ? "btnFilter active" : "btnFilter"}
+              onClick={() => setAuthMode("register")}
+            >
+              Register
+            </button>
+          </div>
+
+          <form onSubmit={submitAuth} className="addForm">
+            <input
+              className="input"
+              value={authEmail}
+              onChange={(e) => setAuthEmail(e.target.value)}
+              placeholder="Email"
+              type="email"
+              autoComplete="email"
+            />
+            <input
+              className="input"
+              value={authPassword}
+              onChange={(e) => setAuthPassword(e.target.value)}
+              placeholder="Şifre"
+              type="password"
+              autoComplete={authMode === "login" ? "current-password" : "new-password"}
+            />
+            <button className="btnPrimary" type="submit" disabled={!authEmail.trim() || !authPassword}>
+              {loading ? "..." : authMode === "login" ? "Giriş Yap" : "Kayıt Ol"}
+            </button>
+          </form>
+
+          {error && <div className="error">Hata: {error}</div>}
+
+          <div className="hint">
+            Not: Backend JWT istiyor. Buradan token alıp todos isteklerine otomatik ekleyeceğiz.
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -248,6 +469,9 @@ function App() {
             <span className="pill">
               Tamam: <b>{todos.filter((t) => !!t.completed).length}</b>
             </span>
+            <button type="button" className="btnFilter" onClick={logout} title="Çıkış">
+              Çıkış
+            </button>
           </div>
         </header>
 
@@ -262,6 +486,8 @@ function App() {
             className="dateInput"
             type="date"
             value={newDueDate}
+            onClick={openNativeDatePicker}
+            onFocus={openNativeDatePicker}
             onChange={(e) => setNewDueDate(e.target.value)}
             title="Son tarih"
           />
@@ -302,12 +528,7 @@ function App() {
             placeholder="Ara: görev başlığı…"
           />
           {query.trim() && (
-            <button
-              type="button"
-              className="btnFilter"
-              onClick={() => setQuery("")}
-              title="Aramayı temizle"
-            >
+            <button type="button" className="btnFilter" onClick={() => setQuery("")} title="Aramayı temizle">
               Temizle
             </button>
           )}
@@ -397,24 +618,24 @@ function App() {
           {loading ? (
             <div className="hint">Yükleniyor…</div>
           ) : listTodos.length === 0 ? (
-              <div className="hint">
-                {selectedDueDate
-                  ? "Bu güne atanmış görev yok."
-                  : query.trim()
-                  ? "Aramana uygun görev bulunamadı."
-                  : filter === "all"
-                  ? "Henüz görev yok. İlk görevini ekle 👇"
-                  : "Bu filtreye uygun görev yok."}
-              </div>
+            <div className="hint">
+              {selectedDueDate
+                ? "Bu güne atanmış görev yok."
+                : query.trim()
+                ? "Aramana uygun görev bulunamadı."
+                : filter === "all"
+                ? "Henüz görev yok. İlk görevini ekle 👇"
+                : "Bu filtreye uygun görev yok."}
+            </div>
           ) : (
             <ul className="ul">
               {listTodos.map((t) => (
                 <li
                   key={t.id}
                   className={
-                      "li" +
-                      (draggingId === t.id ? " dragging" : "") +
-                      (dragOverId === t.id ? " dragOver" : "")
+                    "li" +
+                    (draggingId === t.id ? " dragging" : "") +
+                    (dragOverId === t.id ? " dragOver" : "")
                   }
                   draggable
                   onDragStart={() => {
@@ -440,7 +661,6 @@ function App() {
                       const copy = [...prev];
                       const [moved] = copy.splice(from, 1);
                       copy.splice(to, 0, moved);
-                      // Persist order in background
                       persistOrder(copy);
                       return copy;
                     });
@@ -462,7 +682,6 @@ function App() {
                         className="editGroup"
                         tabIndex={-1}
                         onBlur={(e) => {
-                          // Only save when focus leaves the whole edit group
                           if (!e.currentTarget.contains(e.relatedTarget)) {
                             saveTitle(t.id);
                           }
@@ -486,6 +705,8 @@ function App() {
                           className="dateInput"
                           type="date"
                           value={editingDueDate}
+                          onClick={openNativeDatePicker}
+                          onFocus={openNativeDatePicker}
                           onChange={(e) => setEditingDueDate(e.target.value)}
                           title="Son tarih"
                         />
@@ -522,12 +743,7 @@ function App() {
                     )}
                   </div>
 
-                  <button
-                    type="button"
-                    className="btnDanger"
-                    onClick={() => deleteTodo(t.id)}
-                    title="Sil"
-                  >
+                  <button type="button" className="btnDanger" onClick={() => deleteTodo(t.id)} title="Sil">
                     Sil
                   </button>
                 </li>
@@ -539,5 +755,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
