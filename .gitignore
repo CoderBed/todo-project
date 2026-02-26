@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# IntelliJ IDEA
+.idea/
+*.iml
+
+# Backend
+todo-backend/target/
+
+# Frontend
+todo-frontend/node_modules/
+todo-frontend/dist/
+todo-frontend/.vite/
