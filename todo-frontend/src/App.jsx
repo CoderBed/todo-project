@@ -135,6 +135,11 @@ export default function App() {
       return;
     }
 
+    if (authMode === "register" && password.length < 6) {
+      setError("Şifre en az 6 karakter olmalı.");
+      return;
+    }
+
     try {
       setLoading(true);
       setError("");
@@ -434,7 +439,28 @@ export default function App() {
               type="password"
               autoComplete={authMode === "login" ? "current-password" : "new-password"}
             />
-            <button className="btnPrimary" type="submit" disabled={!authEmail.trim() || !authPassword}>
+            {authMode === "register" &&
+              authEmail &&
+              !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authEmail) && (
+                <div className="hint" style={{ marginTop: 8 }}>
+                  Geçerli bir email adresi giriniz.
+                </div>
+              )}
+            {authMode === "register" && authPassword && authPassword.length < 6 && (
+              <div className="hint" style={{ marginTop: 8 }}>
+                Şifre en az 6 karakter olmalı.
+              </div>
+            )}
+            <button
+              className="btnPrimary"
+              type="submit"
+              disabled={
+                !authEmail.trim() ||
+                !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authEmail) ||
+                !authPassword ||
+                (authMode === "register" && authPassword.length < 6)
+              }
+            >
               {loading ? "..." : authMode === "login" ? "Giriş Yap" : "Kayıt Ol"}
             </button>
           </form>
