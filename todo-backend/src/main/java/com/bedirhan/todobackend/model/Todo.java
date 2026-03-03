@@ -1,6 +1,7 @@
 package com.bedirhan.todobackend.model;
 
 import com.bedirhan.todobackend.user.User;
+import com.bedirhan.todobackend.model.Priority;
 import jakarta.persistence.*;
 import java.time.LocalDate;
 
@@ -23,6 +24,10 @@ public class Todo {
     @Column(name = "due_date")
     private LocalDate dueDate;
 
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private Priority priority = Priority.MEDIUM;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
@@ -40,6 +45,9 @@ public class Todo {
 
     public LocalDate getDueDate() { return dueDate; }
     public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
+
+    public Priority getPriority() { return priority; }
+    public void setPriority(Priority priority) { this.priority = priority; }
 
     public User getUser() { return user; }
     public void setUser(User user) { this.user = user; }

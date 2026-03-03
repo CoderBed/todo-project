@@ -353,6 +353,34 @@ body {
   background: rgba(34, 197, 94, 0.9);
 }
 
+/* Priority Badge */
+.priorityBadge {
+  margin-left: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 12px;
+  letter-spacing: 0.5px;
+}
+
+/* LOW → Yeşil */
+.priorityBadge.p-low {
+  background-color: #e6f7ed;
+  color: #1f7a3f;
+}
+
+/* MEDIUM → Turuncu */
+.priorityBadge.p-medium {
+  background-color: #fff4e5;
+  color: #b26a00;
+}
+
+/* HIGH → Kırmızı */
+.priorityBadge.p-high {
+  background-color: #ffe5e5;
+  color: #b30000;
+}
+
 @media (max-width: 520px) {
   .addForm {
     flex-direction: column;

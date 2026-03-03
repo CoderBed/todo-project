@@ -88,6 +88,7 @@ export default function App() {
   const [newTitle, setNewTitle] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
   const [filter, setFilter] = useState("all"); // all | active | completed
+  const [priorityFilter, setPriorityFilter] = useState("all"); // all | low | medium | high
   const [query, setQuery] = useState("");
   const [calMonth, setCalMonth] = useState(() => {
     const d = new Date();
@@ -102,6 +103,7 @@ export default function App() {
   const [editingTitle, setEditingTitle] = useState("");
   const [editingDueDate, setEditingDueDate] = useState("");
 
+  const [newPriority, setNewPriority] = useState("MEDIUM"); // LOW | MEDIUM | HIGH
   const [loading, setLoading] = useState(false);
 
   // Some browsers / custom CSS may prevent the native date picker from opening.
@@ -250,12 +252,15 @@ export default function App() {
       if (filter === "active" && t.completed) return false;
       if (filter === "completed" && !t.completed) return false;
 
+      const p = (t.priority || "").toString().toLowerCase(); // low | medium | high
+      if (priorityFilter !== "all" && p !== priorityFilter) return false;
+
       if (!q) return true;
 
       const title = (t.title || "").toLowerCase();
       return title.includes(q);
     });
-  }, [todos, filter, query]);
+  }, [todos, filter, query, priorityFilter]);
 
   // --- Calendar helpers (month grid for dueDate) ---
   const todayStr = new Date().toISOString().slice(0, 10);
@@ -308,7 +313,41 @@ export default function App() {
     return visibleTodos.filter((t) => t.dueDate === selectedDueDate);
   }, [visibleTodos, selectedDueDate]);
 
-  console.log("FILTER:", filter);
+  const dashboard = useMemo(() => {
+    const today = new Date();
+    const todayYmd = today.toISOString().slice(0, 10);
+
+    // Pazartesi başlangıçlı hafta
+    const day = (today.getDay() + 6) % 7; // 0=Mon..6=Sun
+    const start = new Date(today);
+    start.setHours(0, 0, 0, 0);
+    start.setDate(today.getDate() - day);
+
+    const end = new Date(start);
+    end.setDate(start.getDate() + 6);
+    end.setHours(23, 59, 59, 999);
+
+    const total = todos.length;
+    const completed = todos.filter((t) => !!t.completed).length;
+    const completedPct = total ? Math.round((completed / total) * 100) : 0;
+
+    const overdue = todos.filter((t) => {
+      if (t.completed) return false;
+      if (!t.dueDate) return false;
+      return t.dueDate < todayYmd; // YYYY-MM-DD string compare OK
+    }).length;
+
+    const dueThisWeek = todos.filter((t) => {
+      if (t.completed) return false;
+      if (!t.dueDate) return false;
+      const d = new Date(t.dueDate + "T00:00:00");
+      return d >= start && d <= end;
+    }).length;
+
+    return { overdue, dueThisWeek, completedPct };
+  }, [todos]);
+
+
 
   async function addTodo(e) {
     e.preventDefault();
@@ -322,6 +361,7 @@ export default function App() {
         body: JSON.stringify({
           title,
           dueDate: newDueDate ? newDueDate : null,
+          priority: newPriority,
         }),
       });
 
@@ -344,6 +384,7 @@ export default function App() {
       }
       setNewTitle("");
       setNewDueDate("");
+      setNewPriority("MEDIUM");
       setError("");
       showToast("Görev eklendi ✅");
     } catch (err) {
@@ -543,7 +584,6 @@ export default function App() {
         <header className="header">
           <div>
             <h1 className="title">To-Do</h1>
-            <p className="subtitle">React + Spring Boot + PostgreSQL</p>
           </div>
 
           <div className="stats">
@@ -562,6 +602,18 @@ export default function App() {
           </div>
         </header>
 
+        <div className="stats" style={{ marginTop: 10 }}>
+          <span className="pill" title="Son tarihi geçmiş (tamamlanmamış) görev sayısı">
+            🔴 Süresi Dolmuş: <b>{dashboard.overdue}</b>
+          </span>
+          <span className="pill" title="Bu hafta teslim edilecek (tamamlanmamış) görev sayısı">
+            🟡 Bu hafta: <b>{dashboard.dueThisWeek}</b>
+          </span>
+          <span className="pill" title="Tamamlanan görev oranı">
+            🟢 Tamamlanan: <b>%{dashboard.completedPct}</b>
+          </span>
+        </div>
+
         <form onSubmit={addTodo} className="addForm">
           <input
             className="input"
@@ -578,6 +630,16 @@ export default function App() {
             onChange={(e) => setNewDueDate(e.target.value)}
             title="Son tarih"
           />
+          <select
+            className="select"
+            value={newPriority}
+            onChange={(e) => setNewPriority(e.target.value)}
+            title="Öncelik"
+          >
+            <option value="LOW">LOW</option>
+            <option value="MEDIUM">MEDIUM</option>
+            <option value="HIGH">HIGH</option>
+          </select>
           <button className="btnPrimary" type="submit" disabled={!newTitle.trim()}>
             Ekle
           </button>
@@ -604,6 +666,40 @@ export default function App() {
             onClick={() => { setError(""); setSelectedDueDate(""); setFilter("completed"); }}
           >
             Tamamlandı
+          </button>
+        </div>
+        <div className="filters">
+          <button
+            type="button"
+            className={priorityFilter === "all" ? "btnFilter active" : "btnFilter"}
+            onClick={() => { setError(""); setSelectedDueDate(""); setPriorityFilter("all"); }}
+            title="Öncelik filtresi"
+          >
+            Priority: Hepsi
+          </button>
+          <button
+            type="button"
+            className={priorityFilter === "high" ? "btnFilter active" : "btnFilter"}
+            onClick={() => { setError(""); setSelectedDueDate(""); setPriorityFilter("high"); }}
+            title="HIGH"
+          >
+            High
+          </button>
+          <button
+            type="button"
+            className={priorityFilter === "medium" ? "btnFilter active" : "btnFilter"}
+            onClick={() => { setError(""); setSelectedDueDate(""); setPriorityFilter("medium"); }}
+            title="MEDIUM"
+          >
+            Medium
+          </button>
+          <button
+            type="button"
+            className={priorityFilter === "low" ? "btnFilter active" : "btnFilter"}
+            onClick={() => { setError(""); setSelectedDueDate(""); setPriorityFilter("low"); }}
+            title="LOW"
+          >
+            Low
           </button>
         </div>
 
@@ -811,6 +907,11 @@ export default function App() {
                         >
                           {t.title}
                         </span>
+                        {t.priority && (
+                          <span className={"priorityBadge p-" + String(t.priority).toLowerCase()} title="Öncelik">
+                            {t.priority}
+                          </span>
+                        )}
                         {t.dueDate && (
                           <span
                             className={

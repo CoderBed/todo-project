@@ -5,6 +5,7 @@ import com.bedirhan.todobackend.model.Todo;
 import com.bedirhan.todobackend.repository.TodoRepository;
 import com.bedirhan.todobackend.user.User;
 import com.bedirhan.todobackend.user.UserRepository;
+import com.bedirhan.todobackend.model.Priority;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -34,7 +35,8 @@ public class TodoController {
             String title,
             boolean completed,
             Long orderIndex,
-            LocalDate dueDate
+            LocalDate dueDate,
+            Priority priority
     ) {}
 
     private TodoResponse toResponse(Todo t) {
@@ -43,7 +45,8 @@ public class TodoController {
                 t.getTitle(),
                 Boolean.TRUE.equals(t.getCompleted()),
                 t.getOrderIndex(),
-                t.getDueDate()
+                t.getDueDate(),
+                t.getPriority()
         );
     }
 
@@ -102,6 +105,9 @@ public class TodoController {
         todo.setCompleted(false);
         todo.setOrderIndex(req.getOrderIndex());
         todo.setDueDate(req.getDueDate());
+
+        todo.setPriority(req.getPriority() == null ? Priority.MEDIUM : req.getPriority());
+
         todo.setUser(user);
 
         Todo saved = todoRepository.save(todo);
@@ -109,7 +115,7 @@ public class TodoController {
     }
 
     // PUT body is optional for your curl tests. If body is empty, we will toggle completed.
-    public record TodoUpdateRequest(Boolean completed, String title, LocalDate dueDate, Long orderIndex) {}
+    public record TodoUpdateRequest(Boolean completed, String title, LocalDate dueDate, Long orderIndex, Priority priority) {}
 
     @PutMapping("/{id}")
     public TodoResponse update(@PathVariable Long id,
@@ -128,7 +134,7 @@ public class TodoController {
         }
 
         // If no body (or all fields null), treat as toggle completed
-        boolean hasAnyField = req != null && (req.completed != null || req.title != null || req.dueDate != null || req.orderIndex != null);
+        boolean hasAnyField = req != null && (req.completed != null || req.title != null || req.dueDate != null || req.orderIndex != null || req.priority != null);
         if (!hasAnyField) {
             todo.setCompleted(!Boolean.TRUE.equals(todo.getCompleted()));
         } else {
@@ -136,6 +142,7 @@ public class TodoController {
             if (req.title != null) todo.setTitle(req.title);
             if (req.dueDate != null) todo.setDueDate(req.dueDate);
             if (req.orderIndex != null) todo.setOrderIndex(req.orderIndex);
+            if (req.priority != null) todo.setPriority(req.priority);
         }
 
         Todo saved = todoRepository.save(todo);
