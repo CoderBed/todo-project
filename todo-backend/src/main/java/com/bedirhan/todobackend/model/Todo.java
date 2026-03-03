@@ -1,9 +1,11 @@
 package com.bedirhan.todobackend.model;
 
+import com.bedirhan.todobackend.user.User;
 import jakarta.persistence.*;
 import java.time.LocalDate;
 
 @Entity
+@Table(name = "todo")
 public class Todo {
 
     @Id
@@ -12,62 +14,33 @@ public class Todo {
 
     @Column(nullable = false)
     private String title;
+
     private Boolean completed = false;
 
-    // Higher value means higher in the list (used for drag & drop ordering)
+    @Column(name = "order_index")
     private Long orderIndex;
 
-    // Optional due date (YYYY-MM-DD)
+    @Column(name = "due_date")
     private LocalDate dueDate;
 
-    public Todo() {
-    }
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumn(name = "user_id", nullable = false)
+    private User user;
 
-    public Todo(Long id, String title, Boolean completed, Long orderIndex, LocalDate dueDate) {
-        this.id = id;
-        this.title = title;
-        this.completed = (completed != null) ? completed : false;
-        this.orderIndex = orderIndex;
-        this.dueDate = dueDate;
-    }
+    // getters/setters
+    public Long getId() { return id; }
+    public String getTitle() { return title; }
+    public void setTitle(String title) { this.title = title; }
 
-    public Long getId() {
-        return id;
-    }
+    public Boolean getCompleted() { return completed; }
+    public void setCompleted(Boolean completed) { this.completed = completed; }
 
-    public String getTitle() {
-        return title;
-    }
+    public Long getOrderIndex() { return orderIndex; }
+    public void setOrderIndex(Long orderIndex) { this.orderIndex = orderIndex; }
 
-    public Boolean isCompleted() {
-        return completed;
-    }
+    public LocalDate getDueDate() { return dueDate; }
+    public void setDueDate(LocalDate dueDate) { this.dueDate = dueDate; }
 
-    public Long getOrderIndex() {
-        return orderIndex;
-    }
-
-    public LocalDate getDueDate() {
-        return dueDate;
-    }
-
-    public void setId(Long id) {
-        this.id = id;
-    }
-
-    public void setTitle(String title) {
-        this.title = title;
-    }
-
-    public void setCompleted(Boolean completed) {
-        this.completed = (completed != null) ? completed : false;
-    }
-
-    public void setOrderIndex(Long orderIndex) {
-        this.orderIndex = orderIndex;
-    }
-
-    public void setDueDate(LocalDate dueDate) {
-        this.dueDate = dueDate;
-    }
+    public User getUser() { return user; }
+    public void setUser(User user) { this.user = user; }
 }

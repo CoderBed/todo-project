@@ -38,7 +38,7 @@ public class AuthController {
 
         userRepository.save(u);
 
-        String token = jwtService.generateToken(u.getEmail(), u.getRole());
+        String token = jwtService.generateToken(u.getEmail());
         return ResponseEntity.status(HttpStatus.CREATED).body(new AuthResponse(token));
     }
 
@@ -51,7 +51,7 @@ public class AuthController {
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
-        String token = jwtService.generateToken(u.getEmail(), u.getRole());
+        String token = jwtService.generateToken(u.getEmail());
         return ResponseEntity.ok(new AuthResponse(token));
     }
 }

@@ -1,9 +1,16 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
-const API_TODOS = "/api/todos";
-const API_AUTH_LOGIN = "/api/auth/login";
-const API_AUTH_REGISTER = "/api/auth/register";
+const RAW_API_BASE = (import.meta?.env?.VITE_API_BASE ?? "").trim();
+// If VITE_API_BASE is not set (or empty), default to Spring Boot (8080)
+// Examples:
+//   VITE_API_BASE=http://localhost:8080
+//   VITE_API_BASE=/api  (when using a Vite proxy)
+const API_BASE = (RAW_API_BASE ? RAW_API_BASE : "http://localhost:8080").replace(/\/$/, "");
+
+const API_TODOS = `${API_BASE}/api/todos`;
+const API_AUTH_LOGIN = `${API_BASE}/api/auth/login`;
+const API_AUTH_REGISTER = `${API_BASE}/api/auth/register`;
 
 function safeJson(res) {
   return res
@@ -29,7 +36,6 @@ async function readError(res) {
 
 function getStoredToken() {
   try {
-    // Backward/forward compatible: some steps/tools may store under `token`
     return localStorage.getItem("todo_token") || localStorage.getItem("token") || "";
   } catch {
     return "";
@@ -39,7 +45,6 @@ function getStoredToken() {
 function storeToken(token) {
   try {
     if (token) {
-      // Keep both keys so older/newer frontends work without confusion
       localStorage.setItem("todo_token", token);
       localStorage.setItem("token", token);
     } else {
@@ -54,17 +59,20 @@ function storeToken(token) {
 async function apiFetch(url, { token, ...opts } = {}) {
   const headers = new Headers(opts.headers || {});
 
+  if (!headers.has("Accept")) headers.set("Accept", "application/json");
+
   // If body is JSON, ensure content-type
-  if (opts.body && !headers.has("Content-Type")) {
+  if (opts.body != null && typeof opts.body === "string" && !headers.has("Content-Type")) {
     headers.set("Content-Type", "application/json; charset=UTF-8");
   }
 
   // If caller didn't pass token explicitly, try to use stored token
   const effectiveToken = token || getStoredToken();
-  if (effectiveToken) headers.set("Authorization", `Bearer ${effectiveToken}`);
+  if (effectiveToken && !headers.has("Authorization")) {
+    headers.set("Authorization", `Bearer ${effectiveToken}`);
+  }
 
-  const res = await fetch(url, { ...opts, headers });
-  return res;
+  return fetch(url, { ...opts, headers });
 }
 
 export default function App() {
@@ -162,6 +170,7 @@ export default function App() {
       setTokenAndPersist(data.token);
       setAuthPassword("");
       showToast(authMode === "login" ? "Giriş başarılı ✅" : "Kayıt başarılı ✅");
+      await loadTodos(data.token);
     } catch (err) {
       setError(err.message || "Bir hata oluştu.");
     } finally {
@@ -169,29 +178,46 @@ export default function App() {
     }
   }
 
+  async function loadTodos(activeToken) {
+    const t = activeToken || token;
+    if (!t) return;
+
+    try {
+      setLoading(true);
+      const res = await apiFetch(API_TODOS, { token: t });
+
+      if (res.status === 401) {
+        // 401 = token invalid/expired
+        logout();
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        // 403 can happen for CORS / missing permission / backend config.
+        // Do NOT auto-logout; keep token so user can retry.
+        throw new Error("Yetkin yok (403). Token gönderildi mi ve backend izin veriyor mu kontrol et.");
+      }
+      if (!res.ok) throw new Error(await readError(res));
+
+      const data = await safeJson(res);
+      setTodos(Array.isArray(data) ? data : []);
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // Keep token synced to localStorage
+  useEffect(() => {
+    storeToken(token);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
   // Load todos when token changes
   useEffect(() => {
     if (!token) return;
-
-    (async () => {
-      try {
-        setLoading(true);
-        const res = await apiFetch(API_TODOS, { token });
-        if (res.status === 401 || res.status === 403) {
-          logout();
-          throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
-        }
-        if (!res.ok) throw new Error(await readError(res));
-
-        const data = await res.json();
-        setTodos(Array.isArray(data) ? data : []);
-        setError("");
-      } catch (err) {
-        setError(err.message);
-      } finally {
-        setLoading(false);
-      }
-    })();
+    loadTodos(token);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
@@ -203,7 +229,15 @@ export default function App() {
         method: "PUT",
         body: JSON.stringify(ids),
       });
+      if (res.status === 401) {
+        logout();
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
+      }
       if (!res.ok) throw new Error(await readError(res));
+      await loadTodos(token);
     } catch (err) {
       setError(err.message);
     }
@@ -274,6 +308,8 @@ export default function App() {
     return visibleTodos.filter((t) => t.dueDate === selectedDueDate);
   }, [visibleTodos, selectedDueDate]);
 
+  console.log("FILTER:", filter);
+
   async function addTodo(e) {
     e.preventDefault();
     const title = newTitle.trim();
@@ -289,15 +325,23 @@ export default function App() {
         }),
       });
 
-      if (res.status === 401 || res.status === 403) {
+      if (res.status === 401) {
         logout();
-        throw new Error("Yetkin yok (403). Tekrar giriş yap.");
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
       }
 
       if (!res.ok) throw new Error(await readError(res));
 
-      const created = await res.json();
-      setTodos((prev) => [created, ...prev]);
+      const created = await safeJson(res);
+      if (created && typeof created === "object") {
+        setTodos((prev) => [created, ...prev]);
+      } else {
+        // If backend returns empty body, just reload
+        await loadTodos(token);
+      }
       setNewTitle("");
       setNewDueDate("");
       setError("");
@@ -317,9 +361,12 @@ export default function App() {
         method: "DELETE",
       });
 
-      if (res.status === 401 || res.status === 403) {
+      if (res.status === 401) {
         logout();
-        throw new Error("Yetkin yok (403). Tekrar giriş yap.");
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
       }
 
       if (!res.ok) throw new Error(await readError(res));
@@ -333,19 +380,30 @@ export default function App() {
 
   async function toggleTodo(id) {
     try {
+      const current = todos.find((x) => x.id === id);
+      const nextCompleted = current ? !current.completed : true;
+
       const res = await apiFetch(`${API_TODOS}/${id}`, {
         token,
         method: "PUT",
+        body: JSON.stringify({ completed: nextCompleted }),
       });
 
-      if (res.status === 401 || res.status === 403) {
+      if (res.status === 401) {
         logout();
-        throw new Error("Yetkin yok (403). Tekrar giriş yap.");
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
       }
 
       if (!res.ok) throw new Error(await readError(res));
-      const updated = await res.json();
-      setTodos((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      const updated = await safeJson(res);
+      if (updated && typeof updated === "object") {
+        setTodos((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      } else {
+        await loadTodos(token);
+      }
       setError("");
       showToast("Durum güncellendi ✅");
     } catch (err) {
@@ -372,15 +430,22 @@ export default function App() {
         }),
       });
 
-      if (res.status === 401 || res.status === 403) {
+      if (res.status === 401) {
         logout();
-        throw new Error("Yetkin yok (403). Tekrar giriş yap.");
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
       }
 
       if (!res.ok) throw new Error(await readError(res));
 
-      const updated = await res.json();
-      setTodos((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      const updated = await safeJson(res);
+      if (updated && typeof updated === "object") {
+        setTodos((prev) => prev.map((t) => (t.id === id ? updated : t)));
+      } else {
+        await loadTodos(token);
+      }
       setEditingId(null);
       setEditingTitle("");
       setEditingDueDate("");
@@ -466,10 +531,6 @@ export default function App() {
           </form>
 
           {error && <div className="error">Hata: {error}</div>}
-
-          <div className="hint">
-            Not: Backend JWT istiyor. Buradan token alıp todos isteklerine otomatik ekleyeceğiz.
-          </div>
         </div>
       </div>
     );
@@ -526,21 +587,21 @@ export default function App() {
           <button
             type="button"
             className={filter === "all" ? "btnFilter active" : "btnFilter"}
-            onClick={() => setFilter("all")}
+            onClick={() => { setError(""); setSelectedDueDate(""); setFilter("all"); }}
           >
             Tümü
           </button>
           <button
             type="button"
             className={filter === "active" ? "btnFilter active" : "btnFilter"}
-            onClick={() => setFilter("active")}
+            onClick={() => { setError(""); setSelectedDueDate(""); setFilter("active"); }}
           >
             Aktif
           </button>
           <button
             type="button"
             className={filter === "completed" ? "btnFilter active" : "btnFilter"}
-            onClick={() => setFilter("completed")}
+            onClick={() => { setError(""); setSelectedDueDate(""); setFilter("completed"); }}
           >
             Tamamlandı
           </button>

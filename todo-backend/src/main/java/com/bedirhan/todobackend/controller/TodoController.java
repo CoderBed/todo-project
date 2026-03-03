@@ -3,121 +3,160 @@ package com.bedirhan.todobackend.controller;
 import com.bedirhan.todobackend.dto.TodoCreateRequest;
 import com.bedirhan.todobackend.model.Todo;
 import com.bedirhan.todobackend.repository.TodoRepository;
-import jakarta.validation.Valid;
+import com.bedirhan.todobackend.user.User;
+import com.bedirhan.todobackend.user.UserRepository;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.HashMap;
+import java.time.LocalDate;
 import java.util.List;
-import java.util.Map;
 
-@CrossOrigin(origins = {"http://localhost:5173", "http://localhost:5174"})
 @RestController
 @RequestMapping("/api/todos")
 public class TodoController {
 
     private final TodoRepository todoRepository;
+    private final UserRepository userRepository;
 
-    public TodoController(TodoRepository todoRepository) {
+    public TodoController(TodoRepository todoRepository, UserRepository userRepository) {
         this.todoRepository = todoRepository;
+        this.userRepository = userRepository;
+    }
+
+    // DTO to prevent serializing JPA lazy proxies (e.g., Todo.user)
+    public record TodoResponse(
+            Long id,
+            String title,
+            boolean completed,
+            Long orderIndex,
+            LocalDate dueDate
+    ) {}
+
+    private TodoResponse toResponse(Todo t) {
+        return new TodoResponse(
+                t.getId(),
+                t.getTitle(),
+                Boolean.TRUE.equals(t.getCompleted()),
+                t.getOrderIndex(),
+                t.getDueDate()
+        );
+    }
+
+    /**
+     * Returns the authenticated user's email (JWT subject) from either:
+     * - @AuthenticationPrincipal (preferred when available)
+     * - SecurityContext Authentication name (fallback)
+     *
+     * Throws 401 if request is unauthenticated.
+     */
+    private String requireEmail(UserDetails userDetails) {
+        if (userDetails != null
+                && userDetails.getUsername() != null
+                && !userDetails.getUsername().isBlank()) {
+            return userDetails.getUsername();
+        }
+
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
+        }
+
+        String name = auth.getName();
+        if (name == null || name.isBlank() || "anonymousUser".equalsIgnoreCase(name)) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Unauthorized");
+        }
+
+        return name;
+    }
+
+    private User requireUserByEmail(String email) {
+        return userRepository.findByEmail(email)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
     }
 
     @GetMapping
-    public List<Todo> getTodos() {
-        return todoRepository.findAllOrdered();
+    public List<TodoResponse> list(@AuthenticationPrincipal UserDetails userDetails) {
+        String email = requireEmail(userDetails);
+        User user = requireUserByEmail(email);
+
+        return todoRepository.findByUserIdOrderByOrderIndexDescIdDesc(user.getId())
+                .stream()
+                .map(this::toResponse)
+                .toList();
     }
 
     @PostMapping
-    public Todo addTodo(@Valid @RequestBody TodoCreateRequest request) {
+    public TodoResponse create(@RequestBody TodoCreateRequest req,
+                              @AuthenticationPrincipal UserDetails userDetails) {
+
+        String email = requireEmail(userDetails);
+        User user = requireUserByEmail(email);
+
         Todo todo = new Todo();
-        todo.setTitle(request.getTitle());
+        todo.setTitle(req.getTitle());
         todo.setCompleted(false);
-        todo.setDueDate(request.getDueDate());
+        todo.setOrderIndex(req.getOrderIndex());
+        todo.setDueDate(req.getDueDate());
+        todo.setUser(user);
 
-        Long max = todoRepository.findMaxOrderIndex();
-        todo.setOrderIndex((max == null ? 0L : max) + 1L);
-
-        return todoRepository.save(todo);
+        Todo saved = todoRepository.save(todo);
+        return toResponse(saved);
     }
 
-    @DeleteMapping("/{id:\\d+}")
-    public void deleteTodo(@PathVariable Long id) {
-        todoRepository.deleteById(id);
-    }
+    // PUT body is optional for your curl tests. If body is empty, we will toggle completed.
+    public record TodoUpdateRequest(Boolean completed, String title, LocalDate dueDate, Long orderIndex) {}
 
-    @PutMapping("/{id:\\d+}")
-    public Todo toggleTodo(@PathVariable Long id) {
+    @PutMapping("/{id}")
+    public TodoResponse update(@PathVariable Long id,
+                               @RequestBody(required = false) TodoUpdateRequest req,
+                               @AuthenticationPrincipal UserDetails userDetails) {
+
+        String email = requireEmail(userDetails);
+        User user = requireUserByEmail(email);
+
         Todo todo = todoRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Todo not found: " + id));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Todo not found"));
 
-        todo.setCompleted(!Boolean.TRUE.equals(todo.isCompleted()));
-        return todoRepository.save(todo);
-    }
-
-    @PutMapping("/{id:\\d+}/title")
-    public Todo updateTitle(@PathVariable Long id, @Valid @RequestBody TodoCreateRequest request) {
-        Todo todo = todoRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Todo not found: " + id));
-
-        todo.setTitle(request.getTitle());
-        // Always apply dueDate from request (can be null to clear)
-        todo.setDueDate(request.getDueDate());
-        return todoRepository.save(todo);
-    }
-
-    @PutMapping("/reorder")
-    public void reorder(@RequestBody List<Long> ids) {
-        // ids comes in UI order: first id should appear at the top.
-        Map<Long, Todo> byId = new HashMap<>();
-        for (Todo t : todoRepository.findAllById(ids)) {
-            byId.put(t.getId(), t);
+        // Ownership check: user can only update their own todos
+        if (todo.getUser() == null || todo.getUser().getId() == null || !todo.getUser().getId().equals(user.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
         }
 
-        long order = ids.size();
-        for (Long id : ids) {
-            Todo t = byId.get(id);
-            if (t != null) {
-                t.setOrderIndex(order);
-                order--;
-            }
+        // If no body (or all fields null), treat as toggle completed
+        boolean hasAnyField = req != null && (req.completed != null || req.title != null || req.dueDate != null || req.orderIndex != null);
+        if (!hasAnyField) {
+            todo.setCompleted(!Boolean.TRUE.equals(todo.getCompleted()));
+        } else {
+            if (req.completed != null) todo.setCompleted(req.completed);
+            if (req.title != null) todo.setTitle(req.title);
+            if (req.dueDate != null) todo.setDueDate(req.dueDate);
+            if (req.orderIndex != null) todo.setOrderIndex(req.orderIndex);
         }
 
-        todoRepository.saveAll(byId.values());
+        Todo saved = todoRepository.save(todo);
+        return toResponse(saved);
     }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    public ResponseEntity<Map<String, Object>> handleValidation(MethodArgumentNotValidException ex) {
-        Map<String, String> errors = new LinkedHashMap<>();
-        ex.getBindingResult().getFieldErrors().forEach(err -> {
-            String field = err.getField();
-            String msg = err.getDefaultMessage();
-            if (!errors.containsKey(field)) {
-                errors.put(field, msg);
-            }
-        });
+    @DeleteMapping("/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void delete(@PathVariable Long id,
+                       @AuthenticationPrincipal UserDetails userDetails) {
 
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", 400);
-        body.put("error", "Bad Request");
-        body.put("message", "Validation failed");
-        body.put("errors", errors);
+        String email = requireEmail(userDetails);
+        User user = requireUserByEmail(email);
 
-        return ResponseEntity.badRequest().body(body);
-    }
+        Todo todo = todoRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Todo not found"));
 
-    @ExceptionHandler(RuntimeException.class)
-    public ResponseEntity<Map<String, Object>> handleRuntime(RuntimeException ex) {
-        Map<String, Object> body = new LinkedHashMap<>();
-        body.put("timestamp", Instant.now().toString());
-        body.put("status", HttpStatus.NOT_FOUND.value());
-        body.put("error", "Not Found");
-        body.put("message", ex.getMessage());
+        if (todo.getUser() == null || todo.getUser().getId() == null || !todo.getUser().getId().equals(user.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+        }
 
-        return ResponseEntity.status(HttpStatus.NOT_FOUND).body(body);
+        todoRepository.delete(todo);
     }
 }

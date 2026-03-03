@@ -24,9 +24,5 @@ public class TodoBackendApplication {
         SpringApplication.run(TodoBackendApplication.class, args);
     }
 
-    @Bean
-    public PasswordEncoder passwordEncoder() {
-        return new BCryptPasswordEncoder();
-    }
 
 }
