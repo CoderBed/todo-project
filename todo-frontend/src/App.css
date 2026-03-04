@@ -2,22 +2,54 @@
   font-family: system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
 }
 
+html,
 body {
   margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  height: 100%;
   background: #0b1220;
   color: #e5e7eb;
 }
 
-.app {
+/* Hem ilk yüklemede hem de sayfa uzadığında arka planın beyazlamasını engelle */
+html,
+body,
+#root {
+  background: #0b1220 !important;
   min-height: 100vh;
-  display: grid;
-  place-items: center;
+  height: 100%;
+}
+
+#root {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
   padding: 32px 16px;
+  box-sizing: border-box;
+}
+
+/* Scroll'da bile arka planın beyaz görünmesini tamamen engelle (fixed backdrop) */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: #0b1220;
+  z-index: -1;
+}
+
+.app {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
+  box-sizing: border-box;
 }
 
 .card {
   width: 100%;
-  max-width: 720px;
+  max-width: 980px;
+  margin: 0 auto;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.10);
   border-radius: 16px;
@@ -260,6 +292,48 @@ body {
   cursor: pointer;
 }
 
+/* Priority select (date input ile aynı görünüm) */
+.prioritySelect,
+.addForm select {
+  height: 44px;
+  padding: 10px 12px;
+  border-radius: 12px;
+
+  border: 1px solid rgba(255,255,255,0.12);
+  background: #0b1220;   /* tamamen koyu arka plan */
+  color: #ffffff;        /* beyaz yazı */
+
+  outline: none;
+  font-weight: 500;
+
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+}
+
+/* Dropdown içi (bazı tarayıcılarda sınırlı çalışır ama denemeye değer) */
+.prioritySelect option,
+.addForm select option {
+  background: #0b1220;
+  color: #ffffff;
+}
+
+/* Select okunu hafif görünür yap */
+.prioritySelect,
+.addForm select {
+  background-image:
+    linear-gradient(45deg, transparent 50%, rgba(229, 231, 235, 0.8) 50%),
+    linear-gradient(135deg, rgba(229, 231, 235, 0.8) 50%, transparent 50%);
+  background-position:
+    calc(100% - 18px) 18px,
+    calc(100% - 12px) 18px;
+  background-size:
+    6px 6px,
+    6px 6px;
+  background-repeat: no-repeat;
+  padding-right: 34px;
+}
+
 .calendar {
   margin-top: 10px;
   padding: 12px;
@@ -379,6 +453,16 @@ body {
 .priorityBadge.p-high {
   background-color: #ffe5e5;
   color: #b30000;
+}
+
+.page {
+  width: 100%;
+}
+
+.container {
+  width: 100%;
+  max-width: 980px;
+  margin: 0 auto;
 }
 
 @media (max-width: 520px) {

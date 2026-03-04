@@ -87,10 +87,64 @@ public class TodoController {
         String email = requireEmail(userDetails);
         User user = requireUserByEmail(email);
 
-        return todoRepository.findByUserIdOrderByOrderIndexDescIdDesc(user.getId())
+        return todoRepository.findByUserIdAndDeletedFalseOrderByOrderIndexDescIdDesc(user.getId())
                 .stream()
                 .map(this::toResponse)
                 .toList();
+    }
+
+    @GetMapping("/trash")
+    public List<TodoResponse> trash(@AuthenticationPrincipal UserDetails userDetails) {
+        String email = requireEmail(userDetails);
+        User user = requireUserByEmail(email);
+
+        return todoRepository
+                .findByUserIdAndDeletedTrueOrderByOrderIndexDescIdDesc(user.getId())
+                .stream()
+                .map(this::toResponse)
+                .toList();
+    }
+
+    @PutMapping("/{id}/restore")
+    public TodoResponse restore(@PathVariable Long id,
+                                @AuthenticationPrincipal UserDetails userDetails) {
+        String email = requireEmail(userDetails);
+        User user = requireUserByEmail(email);
+
+        Todo todo = todoRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Todo not found"));
+
+        // başkasının todo’sunu restore etmesin
+        if (todo.getUser() == null || !todo.getUser().getId().equals(user.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+        }
+
+        todo.setDeleted(false);
+        Todo saved = todoRepository.save(todo);
+        return toResponse(saved);
+    }
+
+    @DeleteMapping({"/{id}/hard", "/{id}/hard-delete", "/{id}/permanent"})
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void hardDelete(@PathVariable Long id,
+                           @AuthenticationPrincipal UserDetails userDetails) {
+        String email = requireEmail(userDetails);
+        User user = requireUserByEmail(email);
+
+        Todo todo = todoRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Todo not found"));
+
+        // güvenlik: sadece kendi todo’sunu silebilsin
+        if (todo.getUser() == null || todo.getUser().getId() == null || !todo.getUser().getId().equals(user.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+        }
+
+        // sadece deleted=true ise kalıcı sil (çöp kutusundan)
+        if (!Boolean.TRUE.equals(todo.getDeleted())) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Önce çöp kutusuna taşı (deleted=true) olmalı.");
+        }
+
+        todoRepository.delete(todo);
     }
 
     @PostMapping
@@ -164,6 +218,8 @@ public class TodoController {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
         }
 
-        todoRepository.delete(todo);
+        todo.setDeleted(true);
+        // güvenli: soft delete her zaman idempotent kalsın
+        todoRepository.save(todo);
     }
 }

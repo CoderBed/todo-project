@@ -24,6 +24,9 @@ public class Todo {
     @Column(name = "due_date")
     private LocalDate dueDate;
 
+    @Column(nullable = false)
+    private Boolean deleted = false;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private Priority priority = Priority.MEDIUM;
@@ -51,4 +54,7 @@ public class Todo {
 
     public User getUser() { return user; }
     public void setUser(User user) { this.user = user; }
+
+    public Boolean getDeleted() { return deleted; }
+    public void setDeleted(Boolean deleted) { this.deleted = deleted; }
 }

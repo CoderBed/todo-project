@@ -9,6 +9,7 @@ const RAW_API_BASE = (import.meta?.env?.VITE_API_BASE ?? "").trim();
 const API_BASE = (RAW_API_BASE ? RAW_API_BASE : "http://localhost:8080").replace(/\/$/, "");
 
 const API_TODOS = `${API_BASE}/api/todos`;
+const API_TODOS_TRASH = `${API_TODOS}/trash`;
 const API_AUTH_LOGIN = `${API_BASE}/api/auth/login`;
 const API_AUTH_REGISTER = `${API_BASE}/api/auth/register`;
 
@@ -89,6 +90,9 @@ export default function App() {
   const [newDueDate, setNewDueDate] = useState("");
   const [filter, setFilter] = useState("all"); // all | active | completed
   const [priorityFilter, setPriorityFilter] = useState("all"); // all | low | medium | high
+  const [view, setView] = useState("todos"); // "todos" | "trash"
+  const [trashTodos, setTrashTodos] = useState([]);
+  const [viewMode, setViewMode] = useState("active"); // active | trash
   const [query, setQuery] = useState("");
   const [calMonth, setCalMonth] = useState(() => {
     const d = new Date();
@@ -210,6 +214,112 @@ export default function App() {
     }
   }
 
+  async function loadTrash(activeToken) {
+    const t = activeToken || token;
+    if (!t) return;
+
+    try {
+      setLoading(true);
+      const res = await apiFetch(API_TODOS_TRASH, { token: t });
+
+      if (res.status === 401) {
+        logout();
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
+      }
+      if (!res.ok) throw new Error(await readError(res));
+
+      const data = await safeJson(res);
+      setTrashTodos(Array.isArray(data) ? data : []);
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function restoreTodo(id) {
+    try {
+      const res = await apiFetch(`${API_TODOS}/${id}/restore`, {
+        token,
+        method: "PUT",
+      });
+
+      if (res.status === 401) {
+        logout();
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
+      }
+      if (!res.ok) throw new Error(await readError(res));
+
+      // UI: trash listesinden çıkar, normal listeyi de tazele
+      setTrashTodos((prev) => prev.filter((t) => t.id !== id));
+      await loadTodos(token);
+
+      showToast("Geri yüklendi ✅");
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function hardDeleteTodo(id) {
+    const ok = window.confirm("Bu görev kalıcı olarak silinecek. Emin misin?");
+    if (!ok) return;
+
+    try {
+      // Some backends use different permanent-delete paths. We'll try a couple of common ones.
+      const candidates = [
+        `${API_TODOS}/${id}/hard`,
+        `${API_TODOS}/${id}/hard-delete`,
+        `${API_TODOS}/${id}/permanent`,
+      ];
+
+      let res = null;
+      for (const url of candidates) {
+        // eslint-disable-next-line no-await-in-loop
+        const r = await apiFetch(url, {
+          token,
+          method: "DELETE",
+        });
+
+        // If endpoint doesn't exist, try next candidate
+        if (r.status === 404) {
+          res = r;
+          continue;
+        }
+
+        res = r;
+        break;
+      }
+
+      if (!res) throw new Error("API isteği başarısız oldu.");
+
+      if (res.status === 401) {
+        logout();
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) throw new Error("Yetkin yok (403).");
+      if (res.status === 404) {
+        throw new Error(
+          "Kalıcı sil endpoint'i bulunamadı (404). Backend'de /api/todos/{id}/hard (veya hard-delete/permanent) tanımlı mı kontrol et."
+        );
+      }
+      if (!res.ok) throw new Error(await readError(res));
+
+      setTrashTodos((prev) => prev.filter((t) => t.id !== id));
+      showToast("Kalıcı silindi ❌");
+      setError("");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   // Keep token synced to localStorage
   useEffect(() => {
     storeToken(token);
@@ -219,9 +329,19 @@ export default function App() {
   // Load todos when token changes
   useEffect(() => {
     if (!token) return;
-    loadTodos(token);
+
+    if (viewMode === "active") {
+      loadTodos(token);
+    } else {
+      loadTrash(token);
+    }
+  }, [token, viewMode]);
+
+  useEffect(() => {
+    if (!token) return;
+    if (view === "trash") loadTrash(token);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  }, [token, view]);
 
   async function persistOrder(nextTodos) {
     try {
@@ -500,8 +620,11 @@ export default function App() {
   // --- UI: If not logged in, show auth screen ---
   if (!token) {
     return (
-      <div className="app">
-        <div className="card">
+      <div
+        className="app"
+        style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "center", padding: 24 }}
+      >
+        <div className="card" style={{ maxWidth: 1100, width: "100%", margin: "0 auto" }}>
           {toast && <div className="toast">{toast}</div>}
 
           <header className="header">
@@ -578,8 +701,11 @@ export default function App() {
   }
 
   return (
-    <div className="app">
-      <div className="card">
+    <div
+      className="app"
+      style={{ minHeight: "100vh", display: "flex", justifyContent: "center", alignItems: "center", padding: 24 }}
+    >
+      <div className="card" style={{ maxWidth: 1100, width: "100%", margin: "0 auto" }}>
         {toast && <div className="toast">{toast}</div>}
         <header className="header">
           <div>
@@ -598,6 +724,46 @@ export default function App() {
             </span>
             <button type="button" className="btnFilter" onClick={logout} title="Çıkış">
               Çıkış
+            </button>
+            <button
+                type="button"
+                className={view === "trash" ? "btnFilter active" : "btnFilter"}
+                onClick={async () => {
+                  setError("");
+                  if (view === "trash") {
+                    setView("todos");
+                  } else {
+                    setView("trash");
+                    await loadTrash(token);
+                  }
+                }}
+                title="Çöp kutusu"
+            >
+              Çöp Kutusu
+            </button>
+          </div>
+
+          <div className="filters">
+            <button
+                type="button"
+                className={viewMode === "active" ? "btnFilter active" : "btnFilter"}
+                onClick={() => {
+                  setViewMode("active");
+                  setError("");
+                }}
+            >
+              Aktif Görevler
+            </button>
+
+            <button
+                type="button"
+                className={viewMode === "trash" ? "btnFilter active" : "btnFilter"}
+                onClick={() => {
+                  setViewMode("trash");
+                  setError("");
+                }}
+            >
+              Çöp Kutusu
             </button>
           </div>
         </header>
@@ -812,130 +978,147 @@ export default function App() {
             </div>
           ) : (
             <ul className="ul">
-              {listTodos.map((t) => (
-                <li
-                  key={t.id}
-                  className={
-                    "li" +
-                    (draggingId === t.id ? " dragging" : "") +
-                    (dragOverId === t.id ? " dragOver" : "")
-                  }
-                  draggable
-                  onDragStart={() => {
-                    setDraggingId(t.id);
-                    setDragOverId(null);
-                    showToast("Sürükle-bırak: sıralıyor…");
-                  }}
-                  onDragEnd={() => {
-                    setDraggingId(null);
-                    setDragOverId(null);
-                  }}
-                  onDragOver={(e) => {
-                    e.preventDefault();
-                    if (dragOverId !== t.id) setDragOverId(t.id);
-                  }}
-                  onDrop={() => {
-                    if (draggingId == null || draggingId === t.id) return;
-                    setDragOverId(null);
-                    setTodos((prev) => {
-                      const from = prev.findIndex((x) => x.id === draggingId);
-                      const to = prev.findIndex((x) => x.id === t.id);
-                      if (from === -1 || to === -1) return prev;
-                      const copy = [...prev];
-                      const [moved] = copy.splice(from, 1);
-                      copy.splice(to, 0, moved);
-                      persistOrder(copy);
-                      return copy;
-                    });
-                  }}
-                >
-                  <div className="left">
-                    <button
-                      type="button"
-                      className={t.completed ? "checkBtn done" : "checkBtn"}
-                      onClick={() => toggleTodo(t.id)}
-                      aria-label="Toggle"
-                      title="Tamamlandı / Geri al"
-                    >
-                      {t.completed ? "✓" : ""}
-                    </button>
+              {(view === "trash" ? trashTodos : listTodos).map((t) => (
+  <li
+    key={t.id}
+    className={
+      "li" +
+      (draggingId === t.id ? " dragging" : "") +
+      (dragOverId === t.id ? " dragOver" : "")
+    }
+    draggable={view !== "trash"}
+    onDragStart={() => {
+      if (view === "trash") return;
+      setDraggingId(t.id);
+      setDragOverId(null);
+      showToast("Sürükle-bırak: sıralıyor…");
+    }}
+    onDragEnd={() => {
+      if (view === "trash") return;
+      setDraggingId(null);
+      setDragOverId(null);
+    }}
+    onDragOver={(e) => {
+      if (view === "trash") return;
+      e.preventDefault();
+      if (dragOverId !== t.id) setDragOverId(t.id);
+    }}
+    onDrop={() => {
+      if (view === "trash") return;
+      if (draggingId == null || draggingId === t.id) return;
+      setDragOverId(null);
+      setTodos((prev) => {
+        const from = prev.findIndex((x) => x.id === draggingId);
+        const to = prev.findIndex((x) => x.id === t.id);
+        if (from === -1 || to === -1) return prev;
+        const copy = [...prev];
+        const [moved] = copy.splice(from, 1);
+        copy.splice(to, 0, moved);
+        persistOrder(copy);
+        return copy;
+      });
+    }}
+  >
+    <div className="left">
+      <button
+        type="button"
+        className={t.completed ? "checkBtn done" : "checkBtn"}
+        onClick={() => (view === "trash" ? null : toggleTodo(t.id))}
+        aria-label="Toggle"
+        title={view === "trash" ? "Çöp kutusunda durum değişmez" : "Tamamlandı / Geri al"}
+        disabled={view === "trash"}
+      >
+        {t.completed ? "✓" : ""}
+      </button>
 
-                    {editingId === t.id ? (
-                      <div
-                        className="editGroup"
-                        tabIndex={-1}
-                        onBlur={(e) => {
-                          if (!e.currentTarget.contains(e.relatedTarget)) {
-                            saveTitle(t.id);
-                          }
-                        }}
-                      >
-                        <input
-                          className="editInput"
-                          value={editingTitle}
-                          autoFocus
-                          onChange={(e) => setEditingTitle(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") saveTitle(t.id);
-                            if (e.key === "Escape") {
-                              setEditingId(null);
-                              setEditingTitle("");
-                              setEditingDueDate("");
-                            }
-                          }}
-                        />
-                        <input
-                          className="dateInput"
-                          type="date"
-                          value={editingDueDate}
-                          onClick={openNativeDatePicker}
-                          onFocus={openNativeDatePicker}
-                          onChange={(e) => setEditingDueDate(e.target.value)}
-                          title="Son tarih"
-                        />
-                      </div>
-                    ) : (
-                      <>
-                        <span
-                          className={t.completed ? "todoText done" : "todoText"}
-                          onDoubleClick={() => {
-                            setEditingId(t.id);
-                            setEditingTitle(t.title);
-                            setEditingDueDate(t.dueDate || "");
-                          }}
-                          title="Düzenlemek için çift tıkla"
-                        >
-                          {t.title}
-                        </span>
-                        {t.priority && (
-                          <span className={"priorityBadge p-" + String(t.priority).toLowerCase()} title="Öncelik">
-                            {t.priority}
-                          </span>
-                        )}
-                        {t.dueDate && (
-                          <span
-                            className={
-                              !t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
-                                ? "dueBadge overdue"
-                                : "dueBadge"
-                            }
-                            title="Son tarih"
-                          >
-                            {t.dueDate}
-                            {!t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
-                              ? " • GEÇMİŞ"
-                              : ""}
-                          </span>
-                        )}
-                      </>
-                    )}
-                  </div>
+      {editingId === t.id && view !== "trash" ? (
+        <div
+          className="editGroup"
+          tabIndex={-1}
+          onBlur={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget)) {
+              saveTitle(t.id);
+            }
+          }}
+        >
+          <input
+            className="editInput"
+            value={editingTitle}
+            autoFocus
+            onChange={(e) => setEditingTitle(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") saveTitle(t.id);
+              if (e.key === "Escape") {
+                setEditingId(null);
+                setEditingTitle("");
+                setEditingDueDate("");
+              }
+            }}
+          />
+          <input
+            className="dateInput"
+            type="date"
+            value={editingDueDate}
+            onClick={openNativeDatePicker}
+            onFocus={openNativeDatePicker}
+            onChange={(e) => setEditingDueDate(e.target.value)}
+            title="Son tarih"
+          />
+        </div>
+      ) : (
+        <>
+          <span
+            className={t.completed ? "todoText done" : "todoText"}
+            onDoubleClick={() => {
+              if (view === "trash") return;
+              setEditingId(t.id);
+              setEditingTitle(t.title);
+              setEditingDueDate(t.dueDate || "");
+            }}
+            title={view === "trash" ? "Çöp kutusunda düzenleme kapalı" : "Düzenlemek için çift tıkla"}
+          >
+            {t.title}
+          </span>
+          {t.priority && (
+            <span className={"priorityBadge p-" + String(t.priority).toLowerCase()} title="Öncelik">
+              {t.priority}
+            </span>
+          )}
+          {t.dueDate && (
+            <span
+              className={
+                !t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
+                  ? "dueBadge overdue"
+                  : "dueBadge"
+              }
+              title="Son tarih"
+            >
+              {t.dueDate}
+              {!t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
+                ? " • GEÇMİŞ"
+                : ""}
+            </span>
+          )}
+        </>
+      )}
+    </div>
 
-                  <button type="button" className="btnDanger" onClick={() => deleteTodo(t.id)} title="Sil">
-                    Sil
-                  </button>
-                </li>
-              ))}
+    {view === "trash" ? (
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" className="btnFilter" onClick={() => restoreTodo(t.id)} title="Geri yükle">
+            Geri yükle
+          </button>
+          <button type="button" className="btnDanger" onClick={() => hardDeleteTodo(t.id)} title="Kalıcı sil">
+            Kalıcı Sil
+          </button>
+        </div>
+    ) : (
+        <button type="button" className="btnDanger" onClick={() => deleteTodo(t.id)} title="Sil">
+          Sil
+        </button>
+    )}
+  </li>
+))}
             </ul>
           )}
         </div>
