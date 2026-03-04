@@ -590,7 +590,7 @@ export default function App() {
     }
 
     try {
-      const res = await apiFetch(`${API_TODOS}/${id}/title`, {
+      const res = await apiFetch(`${API_TODOS}/${id}`, {
         token,
         method: "PUT",
         body: JSON.stringify({

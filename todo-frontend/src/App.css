@@ -195,8 +195,13 @@ body::before {
   display: flex;
   align-items: center;
   gap: 10px;
+
+  /* allow the left area to shrink so the right "Sil" button stays fixed */
+  flex: 1 1 auto;
   min-width: 0;
-  flex: 1;
+
+  /* let content wrap onto the next line instead of pushing the delete button */
+  flex-wrap: wrap;
 }
 
 .checkBtn {
@@ -236,10 +241,15 @@ body::before {
 }
 
 .todoText {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  /* text should wrap instead of pushing the delete button */
+  flex: 1 1 320px;
+  min-width: 240px;
+
+  white-space: normal;
+  overflow-wrap: anywhere;
+
   cursor: text;
+  line-height: 1.35;
 }
 
 .todoText.done {
@@ -263,6 +273,7 @@ body::before {
   border: 1px solid rgba(239, 68, 68, 0.35);
   background: rgba(239, 68, 68, 0.12);
   color: #fecaca;
+  flex: 0 0 auto;
 }
 
 .searchRow {
@@ -490,10 +501,6 @@ body::before {
 
   .btnPrimary {
     width: 100%;
-  }
-
-  .todoText {
-    white-space: normal;
   }
 
 }
