@@ -383,10 +383,18 @@ export default function App() {
   }, [todos, filter, query, priorityFilter]);
 
   // --- Calendar helpers (month grid for dueDate) ---
-  const todayStr = new Date().toISOString().slice(0, 10);
+  function pad2(n) {
+    return String(n).padStart(2, "0");
+  }
+
+  function localYmd(d) {
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+  }
+
+  const todayStr = localYmd(new Date());
 
   function ymd(d) {
-    return d.toISOString().slice(0, 10);
+    return localYmd(d);
   }
 
   function addMonths(base, delta) {
@@ -707,12 +715,33 @@ export default function App() {
     >
       <div className="card" style={{ maxWidth: 1100, width: "100%", margin: "0 auto" }}>
         {toast && <div className="toast">{toast}</div>}
-        <header className="header">
-          <div>
+        <header
+          className="header"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+          }}
+        >
+          <div style={{ flex: "0 0 auto" }}>
             <h1 className="title">To-Do</h1>
           </div>
 
-          <div className="stats">
+          <div
+            style={{
+              flex: "1 1 auto",
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              gap: 12,
+              flexWrap: "nowrap",
+              overflowX: "auto",
+              padding: "4px 0",
+              scrollbarWidth: "none", // Firefox
+              msOverflowStyle: "none", // IE/Edge
+            }}
+          >
             <span className="pill">
               Toplam: <b>{todos.length}</b>
             </span>
@@ -722,48 +751,41 @@ export default function App() {
             <span className="pill">
               Tamam: <b>{todos.filter((t) => !!t.completed).length}</b>
             </span>
-            <button type="button" className="btnFilter" onClick={logout} title="Çıkış">
-              Çıkış
+
+            <button
+              type="button"
+              className={view === "todos" ? "btnFilter active" : "btnFilter"}
+              onClick={async () => {
+                setError("");
+                setView("todos");
+                setViewMode("active");
+                await loadTodos(token);
+              }}
+              title="Aktif görevler"
+            >
+              Aktif Görevler
             </button>
             <button
-                type="button"
-                className={view === "trash" ? "btnFilter active" : "btnFilter"}
-                onClick={async () => {
-                  setError("");
-                  if (view === "trash") {
-                    setView("todos");
-                  } else {
-                    setView("trash");
-                    await loadTrash(token);
-                  }
-                }}
-                title="Çöp kutusu"
+              type="button"
+              className={view === "trash" ? "btnFilter active" : "btnFilter"}
+              onClick={async () => {
+                setError("");
+                if (view === "trash") {
+                  setView("todos");
+                } else {
+                  setView("trash");
+                  await loadTrash(token);
+                }
+              }}
+              title="Çöp kutusu"
             >
               Çöp Kutusu
             </button>
           </div>
 
-          <div className="filters">
-            <button
-                type="button"
-                className={viewMode === "active" ? "btnFilter active" : "btnFilter"}
-                onClick={() => {
-                  setViewMode("active");
-                  setError("");
-                }}
-            >
-              Aktif Görevler
-            </button>
-
-            <button
-                type="button"
-                className={viewMode === "trash" ? "btnFilter active" : "btnFilter"}
-                onClick={() => {
-                  setViewMode("trash");
-                  setError("");
-                }}
-            >
-              Çöp Kutusu
+          <div style={{ flex: "0 0 auto", display: "flex", justifyContent: "flex-end" }}>
+            <button type="button" className="btnFilter" onClick={logout} title="Çıkış">
+              Çıkış
             </button>
           </div>
         </header>
@@ -1028,7 +1050,7 @@ export default function App() {
         title={view === "trash" ? "Çöp kutusunda durum değişmez" : "Tamamlandı / Geri al"}
         disabled={view === "trash"}
       >
-        {t.completed ? "✓" : ""}
+        {t.completed ? <span className="checkIcon">✓</span> : ""}
       </button>
 
       {editingId === t.id && view !== "trash" ? (
