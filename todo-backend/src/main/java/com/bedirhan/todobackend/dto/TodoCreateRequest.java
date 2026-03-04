@@ -9,6 +9,7 @@ public class TodoCreateRequest {
     private Long orderIndex;
     private LocalDate dueDate;
     private Priority priority;
+    private String description;
 
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
@@ -21,4 +22,7 @@ public class TodoCreateRequest {
 
     public Priority getPriority() { return priority; }
     public void setPriority(Priority priority) { this.priority = priority; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 }

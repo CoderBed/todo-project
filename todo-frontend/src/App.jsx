@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import "./App.css";
+import logo from "./assets/logo.png";
 
 const RAW_API_BASE = (import.meta?.env?.VITE_API_BASE ?? "").trim();
 // If VITE_API_BASE is not set (or empty), default to Spring Boot (8080)
@@ -106,6 +107,9 @@ export default function App() {
   const [editingId, setEditingId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
   const [editingDueDate, setEditingDueDate] = useState("");
+  const [descOpenId, setDescOpenId] = useState(null);
+  const [descDraft, setDescDraft] = useState("");
+  const [expandedDescId, setExpandedDescId] = useState(null);
 
   const [newPriority, setNewPriority] = useState("MEDIUM"); // LOW | MEDIUM | HIGH
   const [loading, setLoading] = useState(false);
@@ -555,7 +559,13 @@ export default function App() {
       const res = await apiFetch(`${API_TODOS}/${id}`, {
         token,
         method: "PUT",
-        body: JSON.stringify({ completed: nextCompleted }),
+        body: JSON.stringify({
+          title: current?.title ?? "",
+          description: current?.description ?? "",
+          dueDate: current?.dueDate ?? null,
+          priority: current?.priority ?? null,
+          completed: nextCompleted,
+        }),
       });
 
       if (res.status === 401) {
@@ -580,6 +590,56 @@ export default function App() {
     }
   }
 
+  async function updateTodoDescription(id, nextDescription) {
+    try {
+      const todoId = Number(id);
+      const current = todos.find((x) => Number(x.id) === todoId);
+
+      // If we can't find the todo in state, fall back to reloading after save.
+      const payload = {
+        title: current?.title ?? "",
+        description: nextDescription ?? "",
+        dueDate: current?.dueDate ?? null,
+        priority: current?.priority ?? null,
+        completed: !!current?.completed,
+      };
+
+      const res = await apiFetch(`${API_TODOS}/${todoId}`, {
+        token,
+        method: "PUT",
+        body: JSON.stringify(payload),
+      });
+
+      if (res.status === 401) {
+        logout();
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
+      }
+      if (!res.ok) throw new Error(await readError(res));
+
+      const updated = await safeJson(res);
+
+      // Bazı backend'lerde GET /api/todos cevabında `description` alanı gelmeyebiliyor.
+      // Bu yüzden PUT cevabını kullanıp state'i direkt güncelliyoruz.
+      if (updated && typeof updated === "object") {
+        setTodos((prev) =>
+            prev.map((t) => (Number(t.id) === todoId ? { ...t, ...updated } : t))
+        );
+      } else {
+        // body boş dönerse son çare: yeniden yükle
+        await loadTodos(token);
+      }
+
+      showToast("Açıklama kaydedildi ✅");
+      setError("");
+    } catch (err) {
+      setError(err.message);
+      throw err;
+    }
+  }
+
   async function saveTitle(id) {
     const title = editingTitle.trim();
     if (!title) {
@@ -595,7 +655,10 @@ export default function App() {
         method: "PUT",
         body: JSON.stringify({
           title,
+          description: (todos.find((x) => x.id === id)?.description) ?? "",
           dueDate: editingDueDate ? editingDueDate : null,
+          priority: (todos.find((x) => x.id === id)?.priority) ?? null,
+          completed: !!(todos.find((x) => x.id === id)?.completed),
         }),
       });
 
@@ -637,7 +700,10 @@ export default function App() {
 
           <header className="header">
             <div>
-              <h1 className="title">To-Do</h1>
+              <div className="brand">
+                <img src={logo} alt="MyToDo logo" className="brandLogo" />
+                <h1 className="title">MyToDo</h1>
+              </div>
               <p className="subtitle">Giriş yap / kayıt ol</p>
             </div>
           </header>
@@ -725,7 +791,10 @@ export default function App() {
           }}
         >
           <div style={{ flex: "0 0 auto" }}>
-            <h1 className="title">To-Do</h1>
+            <div className="brand">
+              <img src={logo} alt="MyToDo logo" className="brandLogo" />
+              <h1 className="title">MyToDo</h1>
+            </div>
           </div>
 
           <div
@@ -738,8 +807,8 @@ export default function App() {
               flexWrap: "nowrap",
               overflowX: "auto",
               padding: "4px 0",
-              scrollbarWidth: "none", // Firefox
-              msOverflowStyle: "none", // IE/Edge
+              scrollbarWidth: "none",
+              msOverflowStyle: "none",
             }}
           >
             <span className="pill">
@@ -1088,7 +1157,7 @@ export default function App() {
           />
         </div>
       ) : (
-        <>
+        <div className="todoMain" style={{ minWidth: 0, display: "flex", flexDirection: "column", gap: 6 }}>
           <span
             className={t.completed ? "todoText done" : "todoText"}
             onDoubleClick={() => {
@@ -1098,30 +1167,102 @@ export default function App() {
               setEditingDueDate(t.dueDate || "");
             }}
             title={view === "trash" ? "Çöp kutusunda düzenleme kapalı" : "Düzenlemek için çift tıkla"}
+            style={{ minWidth: 0 }}
           >
             {t.title}
           </span>
-          {t.priority && (
-            <span className={"priorityBadge p-" + String(t.priority).toLowerCase()} title="Öncelik">
-              {t.priority}
-            </span>
+
+          {t.description && t.description.trim() !== "" && (
+            <div className="todoDescWrap" style={{ minWidth: 0 }}>
+              <div
+                className={"todoDesc" + (expandedDescId === t.id ? " expanded" : "")}
+                style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", opacity: 0.78, minWidth: 0 }}
+              >
+                {t.description}
+              </div>
+
+              {t.description.length > 140 && (
+                <button
+                  type="button"
+                  draggable={false}
+                  className="descToggle"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setExpandedDescId((cur) => (cur === t.id ? null : t.id));
+                  }}
+                  title={expandedDescId === t.id ? "Daha az göster" : "Devamını gör"}
+                >
+                  {expandedDescId === t.id ? "Daha az göster" : "Devamını gör"}
+                </button>
+              )}
+            </div>
           )}
-          {t.dueDate && (
-            <span
-              className={
-                !t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
-                  ? "dueBadge overdue"
-                  : "dueBadge"
-              }
-              title="Son tarih"
-            >
-              {t.dueDate}
-              {!t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
-                ? " • GEÇMİŞ"
-                : ""}
-            </span>
+          {view !== "trash" && descOpenId === t.id && (
+            <div className="descEditor">
+              <textarea
+                className="descTextarea"
+                value={descDraft}
+                onChange={(e) => setDescDraft(e.target.value)}
+                placeholder="Açıklama yaz…"
+                rows={2}
+              />
+              <div className="descEditorActions">
+                <button
+                    type="button"
+                    draggable={false}
+                    className="btnPrimarySmall"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={async (e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      await updateTodoDescription(t.id, descDraft);
+                      setDescOpenId(null);
+                    }}
+                >
+                  Kaydet
+                </button>
+                <button
+                    type="button"
+                    draggable={false}
+                    className="btnGhostSmall"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDescOpenId(null);
+                    }}
+                >
+                  İptal
+                </button>
+              </div>
+            </div>
           )}
-        </>
+
+          <div className="todoMetaRow" style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+            {t.priority && (
+              <span className={"priorityBadge p-" + String(t.priority).toLowerCase()} title="Öncelik">
+                {t.priority}
+              </span>
+            )}
+            {t.dueDate && (
+              <span
+                className={
+                  !t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
+                    ? "dueBadge overdue"
+                    : "dueBadge"
+                }
+                title="Son tarih"
+              >
+                {t.dueDate}
+                {!t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
+                  ? " • GEÇMİŞ"
+                  : ""}
+              </span>
+            )}
+          </div>
+        </div>
       )}
     </div>
 
@@ -1135,9 +1276,38 @@ export default function App() {
           </button>
         </div>
     ) : (
-        <button type="button" className="btnDanger" onClick={() => deleteTodo(t.id)} title="Sil">
-          Sil
-        </button>
+        <div className="todoActions">
+          <button
+              type="button"
+              draggable={false}
+              className="btnSecondary"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                const willOpen = descOpenId !== t.id;
+                setDescOpenId(willOpen ? t.id : null);
+                setDescDraft(willOpen ? (t.description || "") : "");
+              }}
+              title="Açıklama yaz"
+          >
+            Yaz
+          </button>
+          <button
+              type="button"
+              draggable={false}
+              className="btnDanger"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                deleteTodo(t.id);
+              }}
+              title="Sil"
+          >
+            Sil
+          </button>
+        </div>
     )}
   </li>
 ))}

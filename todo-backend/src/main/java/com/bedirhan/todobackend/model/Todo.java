@@ -16,6 +16,9 @@ public class Todo {
     @Column(nullable = false)
     private String title;
 
+    @Column(columnDefinition = "TEXT")
+    private String description;
+
     private Boolean completed = false;
 
     @Column(name = "order_index")
@@ -35,10 +38,13 @@ public class Todo {
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
 
-    // getters/setters
+    // getter/setter kısmı
     public Long getId() { return id; }
     public String getTitle() { return title; }
     public void setTitle(String title) { this.title = title; }
+
+    public String getDescription() { return description; }
+    public void setDescription(String description) { this.description = description; }
 
     public Boolean getCompleted() { return completed; }
     public void setCompleted(Boolean completed) { this.completed = completed; }

@@ -182,7 +182,7 @@ body::before {
 
 .li {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   padding: 12px;
@@ -193,7 +193,7 @@ body::before {
 
 .left {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
 
   /* allow the left area to shrink so the right "Sil" button stays fixed */
@@ -201,7 +201,7 @@ body::before {
   min-width: 0;
 
   /* let content wrap onto the next line instead of pushing the delete button */
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
 }
 
 .checkBtn {
@@ -219,6 +219,7 @@ body::before {
   flex: 0 0 auto;
   font-size: 16px;
   line-height: 1;
+  align-self: flex-start;
 }
 
 .checkIcon {
@@ -242,8 +243,8 @@ body::before {
 
 .todoText {
   /* text should wrap instead of pushing the delete button */
-  flex: 1 1 320px;
-  min-width: 240px;
+  flex: 1 1 auto;
+  min-width: 0;
 
   white-space: normal;
   overflow-wrap: anywhere;
@@ -257,6 +258,130 @@ body::before {
   text-decoration: line-through;
 }
 
+.todoDescBox { margin-top: 8px; }
+
+/* görev açıklaması */
+.todoDesc{
+  color: rgba(255,255,255,0.65);
+  font-size: 14px;
+  line-height: 1.45;
+
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.todoDesc.expanded{
+  -webkit-line-clamp: unset;
+  overflow: visible;
+}
+
+.descToggle{
+  margin-top: 4px;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: rgba(120, 180, 255, 0.95);
+  cursor: pointer;
+  font-size: 13px;
+}
+
+.descToggle:hover{ text-decoration: underline; }
+
+/* açıklama düzenleme (contentEditable) daha küçük ve kompakt görünsün */
+.todoDesc[contenteditable="true"] {
+  padding: 6px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  background: rgba(0, 0, 0, 0.18);
+  outline: none;
+}
+
+.todoDesc[contenteditable="true"]:focus {
+  border-color: rgba(59, 130, 246, 0.35);
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+/* title + açıklama + badge düzeni */
+.todoMain {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  justify-content: flex-start;
+}
+
+/* priority ve tarih satırı */
+.todoMetaRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.todoActions{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  flex:0 0 auto;
+}
+
+.btnSecondary{
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.descEditor{
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(0,0,0,0.18);
+}
+
+.descTextarea{
+  width: 100%;
+  resize: vertical;
+  min-height: 48px;
+  max-height: 120px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(0,0,0,0.25);
+  color: #e5e7eb;
+  outline: none;
+}
+
+.descEditorActions{
+  display:flex;
+  gap:10px;
+  justify-content:flex-end;
+  margin-top: 8px;
+}
+
+.btnPrimarySmall{
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(59, 130, 246, 0.18);
+  color: #e5e7eb;
+  cursor: pointer;
+}
+
+.btnGhostSmall{
+  padding: 8px 10px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: transparent;
+  color: #e5e7eb;
+  cursor: pointer;
+}
 .editInput {
   width: 100%;
   padding: 8px 10px;
@@ -274,6 +399,8 @@ body::before {
   background: rgba(239, 68, 68, 0.12);
   color: #fecaca;
   flex: 0 0 auto;
+  align-self: flex-start;
+  margin-top: 2px;
 }
 
 .searchRow {
@@ -492,6 +619,18 @@ body::before {
   width: 100%;
   max-width: 980px;
   margin: 0 auto;
+}
+
+.brand{
+  display:flex;
+  align-items:center;
+  gap:12px;
+}
+
+.brandLogo{
+  width:48px;   /* MyToDo yazısı kadar görünmesi için burayı arttır/azalt */
+  height:48px;
+  object-fit:contain;
 }
 
 @media (max-width: 520px) {
