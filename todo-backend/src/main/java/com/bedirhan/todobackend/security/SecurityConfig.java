@@ -42,6 +42,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/health").permitAll()
                         .requestMatchers("/error").permitAll()
                         .requestMatchers("/api/todos/**").authenticated() // GET/PUT/POST/DELETE hepsi
+                        .requestMatchers("/api/categories/**").authenticated()
                         .anyRequest().denyAll()
                 )
                 .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);

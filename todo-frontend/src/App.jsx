@@ -13,6 +13,7 @@ const API_TODOS = `${API_BASE}/api/todos`;
 const API_TODOS_TRASH = `${API_TODOS}/trash`;
 const API_AUTH_LOGIN = `${API_BASE}/api/auth/login`;
 const API_AUTH_REGISTER = `${API_BASE}/api/auth/register`;
+const API_CATEGORIES = `${API_BASE}/api/categories`;
 
 function safeJson(res) {
   return res
@@ -89,6 +90,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [newTitle, setNewTitle] = useState("");
   const [newDueDate, setNewDueDate] = useState("");
+  const [newCategoryId, setNewCategoryId] = useState(""); // "" | "<id>"
+  const [newCategoryName, setNewCategoryName] = useState("");
+  const [categories, setCategories] = useState([]);
   const [filter, setFilter] = useState("all"); // all | active | completed
   const [priorityFilter, setPriorityFilter] = useState("all"); // all | low | medium | high
   const [view, setView] = useState("todos"); // "todos" | "trash"
@@ -141,7 +145,6 @@ export default function App() {
     setTokenAndPersist("");
     setTodos([]);
     setError("");
-    // ✅ auth alanlarını da temizle
     setAuthEmail("");
     setAuthPassword("");
     setAuthMode("login");
@@ -185,10 +188,79 @@ export default function App() {
       setAuthPassword("");
       showToast(authMode === "login" ? "Giriş başarılı ✅" : "Kayıt başarılı ✅");
       await loadTodos(data.token);
+      await loadCategories(data.token);
     } catch (err) {
       setError(err.message || "Bir hata oluştu.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadCategories(activeToken) {
+    const t = activeToken || token;
+    if (!t) return;
+
+    try {
+      const res = await apiFetch(API_CATEGORIES, { token: t });
+
+      if (res.status === 401) {
+        logout();
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
+      }
+      if (!res.ok) throw new Error(await readError(res));
+
+      const data = await safeJson(res);
+      setCategories(Array.isArray(data) ? data : []);
+    } catch (err) {
+      // kategori çekme hatası todo listesini bozmasın; sadece console'a yaz
+      console.error("Kategori yükleme hatası:", err);
+    }
+  }
+
+  async function createCategory() {
+    const name = newCategoryName.trim();
+    if (!name) return;
+
+    try {
+      const res = await apiFetch(API_CATEGORIES, {
+        token,
+        method: "POST",
+        body: JSON.stringify({ name }),
+      });
+
+      if (res.status === 401) {
+        logout();
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
+      }
+      if (!res.ok) throw new Error(await readError(res));
+
+      const created = await safeJson(res);
+
+      // Backend bazı durumlarda boş dönebilir; o durumda yeniden yükle
+      if (!created || typeof created !== "object") {
+        await loadCategories(token);
+        setNewCategoryName("");
+        return;
+      }
+
+      setCategories((prev) => {
+        const exists = prev.some((c) => Number(c.id) === Number(created.id));
+        if (exists) return prev;
+        return [...prev, created];
+      });
+
+      // Yeni eklenen kategoriyi seç
+      if (created.id != null) setNewCategoryId(String(created.id));
+      setNewCategoryName("");
+      showToast("Kategori eklendi. ✅");
+    } catch (err) {
+      setError(err.message || "Kategori eklenemedi.");
     }
   }
 
@@ -345,9 +417,12 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // Load todos when token changes
+  // Load todos and categories when token or viewMode changes
   useEffect(() => {
     if (!token) return;
+
+    // kategoriler her iki ekranda da lazım
+    loadCategories(token);
 
     if (viewMode === "active") {
       loadTodos(token);
@@ -462,6 +537,14 @@ export default function App() {
     });
   }, [todos, filter, query, priorityFilter]);
 
+  const categoryNameById = useMemo(() => {
+    const map = new Map();
+    for (const c of categories) {
+      if (c && c.id != null) map.set(Number(c.id), c.name);
+    }
+    return map;
+  }, [categories]);
+
   // --- Calendar helpers (month grid for dueDate) ---
   function pad2(n) {
     return String(n).padStart(2, "0");
@@ -523,9 +606,9 @@ export default function App() {
 
   const dashboard = useMemo(() => {
     const today = new Date();
-    const todayYmd = today.toISOString().slice(0, 10);
+    const todayYmd = localYmd(today);
 
-    // Pazartesi başlangıçlı hafta
+    // Pazartesi başlangıçlı hafta olarak sayıyor. (Bu Hafta kısmı)
     const day = (today.getDay() + 6) % 7; // 0=Mon..6=Sun
     const start = new Date(today);
     start.setHours(0, 0, 0, 0);
@@ -568,8 +651,10 @@ export default function App() {
         method: "POST",
         body: JSON.stringify({
           title,
+          description: "",
           dueDate: newDueDate ? newDueDate : null,
           priority: newPriority,
+          categoryId: newCategoryId ? Number(newCategoryId) : null,
         }),
       });
 
@@ -593,6 +678,7 @@ export default function App() {
       setNewTitle("");
       setNewDueDate("");
       setNewPriority("MEDIUM");
+      setNewCategoryId("");
       setError("");
       showToast("Görev eklendi. ✅");
     } catch (err) {
@@ -959,7 +1045,7 @@ export default function App() {
               Aktif: <b>{todos.filter((t) => !t.completed).length}</b>
             </span>
             <span className="pill">
-              Tamam: <b>{todos.filter((t) => !!t.completed).length}</b>
+              Tamamlanmış: <b>{todos.filter((t) => !!t.completed).length}</b>
             </span>
 
             <button
@@ -1038,12 +1124,51 @@ export default function App() {
             <option value="MEDIUM">MEDIUM</option>
             <option value="HIGH">HIGH</option>
           </select>
+          <select
+            className="select"
+            value={newCategoryId}
+            onChange={(e) => setNewCategoryId(e.target.value)}
+            title="Kategori"
+          >
+            <option value="" disabled hidden>
+              Seç…
+            </option>
+            {categories.map((c) => (
+              <option key={c.id} value={String(c.id)}>
+                {c.name}
+              </option>
+            ))}
+          </select>
           <button className="btnPrimary" type="submit" disabled={!newTitle.trim()}>
             Ekle
           </button>
         </form>
 
-        <div className="filters">
+        <div className="categoryAddRow">
+          <input
+            className="input"
+            value={newCategoryName}
+            onChange={(e) => setNewCategoryName(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                createCategory();
+              }
+            }}
+            placeholder="Yeni kategori ekle…"
+          />
+          <button
+            type="button"
+            className="btnFilter"
+            onClick={createCategory}
+            disabled={!newCategoryName.trim()}
+            title="Kategori ekle"
+          >
+            + Ekle
+          </button>
+        </div>
+
+        <div className="filters" style={{ marginTop: 10 }}>
           <button
             type="button"
             className={filter === "all" ? "btnFilter active" : "btnFilter"}
@@ -1325,22 +1450,29 @@ export default function App() {
                 {t.description}
               </div>
 
-              {t.description.length > 140 && (
-                <button
-                  type="button"
-                  draggable={false}
-                  className="descToggle"
-                  onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    setExpandedDescId((cur) => (cur === t.id ? null : t.id));
-                  }}
-                  title={expandedDescId === t.id ? "Daha az göster" : "Devamını gör"}
-                >
-                  {expandedDescId === t.id ? "Daha az göster" : "Devamını gör"}
-                </button>
-              )}
+              {(() => {
+                const desc = (t.description || "").toString();
+                const showToggle = desc.length > 80 || desc.split("\n").length > 2;
+
+                if (!showToggle) return null;
+
+                return (
+                  <button
+                    type="button"
+                    draggable={false}
+                    className="descToggle"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setExpandedDescId((cur) => (cur === t.id ? null : t.id));
+                    }}
+                    title={expandedDescId === t.id ? "Daha az göster" : "Devamını gör"}
+                  >
+                    {expandedDescId === t.id ? "Daha az göster" : "Devamını gör"}
+                  </button>
+                );
+              })()}
             </div>
           )}
           {view !== "trash" && descOpenId === t.id && (
@@ -1390,19 +1522,28 @@ export default function App() {
                 {t.priority}
               </span>
             )}
+            {(() => {
+              const cid = t.categoryId ?? t.category?.id ?? null;
+              const cname = t.categoryName ?? (cid != null ? categoryNameById.get(Number(cid)) : null);
+              return cname ? (
+                <span className="categoryBadge" title="Kategori">
+                  {cname}
+                </span>
+              ) : null;
+            })()}
             {t.dueDate && (
               <span
-                className={
-                  !t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
-                    ? "dueBadge overdue"
-                    : "dueBadge"
-                }
+                  className={
+                    !t.completed && t.dueDate < localYmd(new Date())
+                        ? "dueBadge overdue"
+                        : "dueBadge"
+                  }
                 title="Son tarih"
               >
                 {t.dueDate}
-                {!t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
-                  ? " • SÜRESİ DOLMUŞ"
-                  : ""}
+                {!t.completed && t.dueDate < localYmd(new Date())
+                    ? " • SÜRESİ DOLMUŞ"
+                    : ""}
               </span>
             )}
           </div>

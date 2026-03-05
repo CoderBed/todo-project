@@ -20,6 +20,10 @@ import java.util.List;
 import java.util.Map;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
+
+import com.bedirhan.todobackend.model.Category;
+import com.bedirhan.todobackend.repository.CategoryRepository;
 
 @RestController
 @RequestMapping("/api/todos")
@@ -27,10 +31,14 @@ public class TodoController {
 
     private final TodoRepository todoRepository;
     private final UserRepository userRepository;
+    private final CategoryRepository categoryRepository;
 
-    public TodoController(TodoRepository todoRepository, UserRepository userRepository) {
+    public TodoController(TodoRepository todoRepository,
+                          UserRepository userRepository,
+                          CategoryRepository categoryRepository) {
         this.todoRepository = todoRepository;
         this.userRepository = userRepository;
+        this.categoryRepository = categoryRepository;
     }
 
     // DTO to prevent serializing JPA lazy proxies (e.g., Todo.user)
@@ -42,10 +50,19 @@ public class TodoController {
             Long orderIndex,
             LocalDate dueDate,
             Priority priority,
-            Boolean pinned
+            Boolean pinned,
+            Long categoryId,
+            String categoryName
     ) {}
 
     private TodoResponse toResponse(Todo t) {
+        Long categoryId = null;
+        String categoryName = null;
+        if (t.getCategory() != null) {
+            categoryId = t.getCategory().getId();
+            categoryName = t.getCategory().getName();
+        }
+
         return new TodoResponse(
                 t.getId(),
                 t.getTitle(),
@@ -54,7 +71,9 @@ public class TodoController {
                 t.getOrderIndex(),
                 t.getDueDate(),
                 t.getPriority(),
-                Boolean.TRUE.equals(t.getPinned())
+                Boolean.TRUE.equals(t.getPinned()),
+                categoryId,
+                categoryName
         );
     }
 
@@ -90,6 +109,21 @@ public class TodoController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "User not found"));
     }
 
+    private Category requireCategoryForUser(Long categoryId, User user) {
+        Category category = categoryRepository.findById(categoryId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Category not found"));
+
+        // category ownership check (if Category has a user field)
+        if (category.getUser() != null && category.getUser().getId() != null) {
+            if (!category.getUser().getId().equals(user.getId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+            }
+        }
+
+        return category;
+    }
+
+    @Transactional(readOnly = true)
     @GetMapping
     public List<TodoResponse> list(@AuthenticationPrincipal UserDetails userDetails) {
         String email = requireEmail(userDetails);
@@ -101,6 +135,7 @@ public class TodoController {
                 .toList();
     }
 
+    @Transactional(readOnly = true)
     @GetMapping("/trash")
     public List<TodoResponse> trash(@AuthenticationPrincipal UserDetails userDetails) {
         String email = requireEmail(userDetails);
@@ -113,6 +148,7 @@ public class TodoController {
                 .toList();
     }
 
+    @Transactional
     @PutMapping("/{id}/restore")
     public TodoResponse restore(@PathVariable Long id,
                                 @AuthenticationPrincipal UserDetails userDetails) {
@@ -142,7 +178,7 @@ public class TodoController {
         Todo todo = todoRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Todo not found"));
 
-        // güvenlik: sadece kendi todo’sunu silebilsin
+        // güvenlik: sadece kendi todo’sunu silebilsin.
         if (todo.getUser() == null || todo.getUser().getId() == null || !todo.getUser().getId().equals(user.getId())) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
         }
@@ -155,6 +191,7 @@ public class TodoController {
         todoRepository.delete(todo);
     }
 
+    @Transactional
     @PostMapping
     public TodoResponse create(@RequestBody TodoCreateRequest req,
                               @AuthenticationPrincipal UserDetails userDetails) {
@@ -169,6 +206,10 @@ public class TodoController {
         todo.setOrderIndex(req.getOrderIndex());
         todo.setDueDate(req.getDueDate());
         todo.setPriority(req.getPriority() == null ? Priority.MEDIUM : req.getPriority());
+        if (req.getCategoryId() != null) {
+            Category category = requireCategoryForUser(req.getCategoryId(), user);
+            todo.setCategory(category);
+        }
         todo.setUser(user);
 
         Todo saved = todoRepository.save(todo);
@@ -182,9 +223,11 @@ public class TodoController {
             String description,
             LocalDate dueDate,
             Long orderIndex,
-            Priority priority
+            Priority priority,
+            Long categoryId
     ) {}
 
+    @Transactional
     @PutMapping("/{id}")
     public TodoResponse update(@PathVariable Long id,
                                @RequestBody(required = false) TodoUpdateRequest req,
@@ -209,6 +252,7 @@ public class TodoController {
                         || req.dueDate != null
                         || req.orderIndex != null
                         || req.priority != null
+                        || req.categoryId != null
         );
         if (!hasAnyField) {
             todo.setCompleted(!Boolean.TRUE.equals(todo.getCompleted()));
@@ -219,12 +263,17 @@ public class TodoController {
             if (req.dueDate != null) todo.setDueDate(req.dueDate);
             if (req.orderIndex != null) todo.setOrderIndex(req.orderIndex);
             if (req.priority != null) todo.setPriority(req.priority);
+            if (req.categoryId != null) {
+                Category category = requireCategoryForUser(req.categoryId, user);
+                todo.setCategory(category);
+            }
         }
 
         Todo saved = todoRepository.save(todo);
         return toResponse(saved);
     }
 
+    @Transactional
     @PutMapping("/{id}/pin")
     public TodoResponse togglePin(@PathVariable Long id,
                                   @AuthenticationPrincipal UserDetails userDetails) {

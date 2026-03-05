@@ -2,6 +2,7 @@ package com.bedirhan.todobackend.model;
 
 import com.bedirhan.todobackend.user.User;
 import com.bedirhan.todobackend.model.Priority;
+import com.bedirhan.todobackend.model.Category;
 import jakarta.persistence.*;
 import java.time.LocalDate;
 
@@ -37,6 +38,10 @@ public class Todo {
     @Column(nullable = false)
     private Boolean pinned = false;
 
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "category_id")
+    private Category category;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
@@ -63,6 +68,9 @@ public class Todo {
 
     public Boolean getPinned() { return pinned; }
     public void setPinned(Boolean pinned) { this.pinned = pinned; }
+
+    public Category getCategory() { return category; }
+    public void setCategory(Category category) { this.category = category; }
 
     public User getUser() { return user; }
     public void setUser(User user) { this.user = user; }
