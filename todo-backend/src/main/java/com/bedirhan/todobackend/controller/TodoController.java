@@ -15,7 +15,11 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+
+import org.springframework.http.ResponseEntity;
 
 @RestController
 @RequestMapping("/api/todos")
@@ -36,7 +40,9 @@ public class TodoController {
             String description,
             boolean completed,
             Long orderIndex,
-            LocalDate dueDate
+            LocalDate dueDate,
+            Priority priority,
+            Boolean pinned
     ) {}
 
     private TodoResponse toResponse(Todo t) {
@@ -46,7 +52,9 @@ public class TodoController {
                 t.getDescription(),
                 Boolean.TRUE.equals(t.getCompleted()),
                 t.getOrderIndex(),
-                t.getDueDate()
+                t.getDueDate(),
+                t.getPriority(),
+                Boolean.TRUE.equals(t.getPinned())
         );
     }
 
@@ -87,7 +95,7 @@ public class TodoController {
         String email = requireEmail(userDetails);
         User user = requireUserByEmail(email);
 
-        return todoRepository.findByUserIdAndDeletedFalseOrderByOrderIndexDescIdDesc(user.getId())
+        return todoRepository.findByUserIdAndDeletedFalseOrderByPinnedDescOrderIndexDescIdDesc(user.getId())
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -99,7 +107,7 @@ public class TodoController {
         User user = requireUserByEmail(email);
 
         return todoRepository
-                .findByUserIdAndDeletedTrueOrderByOrderIndexDescIdDesc(user.getId())
+                .findByUserIdAndDeletedTrueOrderByPinnedDescOrderIndexDescIdDesc(user.getId())
                 .stream()
                 .map(this::toResponse)
                 .toList();
@@ -217,6 +225,25 @@ public class TodoController {
         return toResponse(saved);
     }
 
+    @PutMapping("/{id}/pin")
+    public TodoResponse togglePin(@PathVariable Long id,
+                                  @AuthenticationPrincipal UserDetails userDetails) {
+
+        String email = requireEmail(userDetails);
+        User user = requireUserByEmail(email);
+
+        Todo todo = todoRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Todo not found"));
+
+        if (todo.getUser() == null || todo.getUser().getId() == null || !todo.getUser().getId().equals(user.getId())) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+        }
+
+        todo.setPinned(!Boolean.TRUE.equals(todo.getPinned()));
+        Todo saved = todoRepository.save(todo);
+        return toResponse(saved);
+    }
+
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id,
@@ -235,5 +262,54 @@ public class TodoController {
         todo.setDeleted(true);
         // güvenli: soft delete her zaman idempotent kalsın
         todoRepository.save(todo);
+    }
+
+
+    @PutMapping("/reorder")
+    public ResponseEntity<Void> reorder(@RequestBody List<Long> ids,
+                                        @AuthenticationPrincipal UserDetails userDetails) {
+
+        if (ids == null || ids.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ids boş olamaz");
+        }
+
+        String email = requireEmail(userDetails);
+        User user = requireUserByEmail(email);
+
+        // 1) Verilen id'lere karşılık gelen todo'ları çek
+        List<Todo> todos = todoRepository.findAllById(ids);
+        if (todos.size() != ids.size()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Bazı todo id'leri bulunamadı");
+        }
+
+        // 2) Güvenlik: sadece kendi todo'larını reorder edebilsin + deleted=false olanları
+        for (Todo t : todos) {
+            if (t.getUser() == null || t.getUser().getId() == null || !t.getUser().getId().equals(user.getId())) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Forbidden");
+            }
+            if (Boolean.TRUE.equals(t.getDeleted())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Çöp kutusundaki todo reorder edilemez");
+            }
+        }
+
+        // 3) İstenen sıraya göre orderIndex ata.
+        // UI'da ilk gelen (ids[0]) en üstte görünsün diye daha büyük orderIndex veriyoruz.
+        Map<Long, Todo> byId = new HashMap<>();
+        for (Todo t : todos) {
+            byId.put(t.getId(), t);
+        }
+
+        long base = ids.size();
+        for (int i = 0; i < ids.size(); i++) {
+            Long id = ids.get(i);
+            Todo t = byId.get(id);
+            if (t == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geçersiz id: " + id);
+            }
+            t.setOrderIndex(base - i);
+        }
+
+        todoRepository.saveAll(todos);
+        return ResponseEntity.ok().build();
     }
 }

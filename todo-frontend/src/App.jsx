@@ -79,7 +79,7 @@ async function apiFetch(url, { token, ...opts } = {}) {
 
 export default function App() {
   // --- Auth ---
-  const [token, setToken] = useState(() => getStoredToken());
+  const [token, setToken] = useState("");
   const [authMode, setAuthMode] = useState("login"); // login | register
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
@@ -141,7 +141,11 @@ export default function App() {
     setTokenAndPersist("");
     setTodos([]);
     setError("");
-    showToast("Çıkış yapıldı");
+    // ✅ auth alanlarını da temizle
+    setAuthEmail("");
+    setAuthPassword("");
+    setAuthMode("login");
+    showToast("Çıkış yapıldı.");
   }
 
   async function submitAuth(e) {
@@ -265,7 +269,7 @@ export default function App() {
       setTrashTodos((prev) => prev.filter((t) => t.id !== id));
       await loadTodos(token);
 
-      showToast("Geri yüklendi ✅");
+      showToast("Geri yüklendi. ✅");
       setError("");
     } catch (err) {
       setError(err.message);
@@ -317,12 +321,23 @@ export default function App() {
       if (!res.ok) throw new Error(await readError(res));
 
       setTrashTodos((prev) => prev.filter((t) => t.id !== id));
-      showToast("Kalıcı silindi ❌");
+      showToast("Kalıcı olarak silindi. ❌");
       setError("");
     } catch (err) {
       setError(err.message);
     }
   }
+
+  useEffect(() => {
+    // Sadece sayfa yenilemeyse token'ı geri yükle
+    const nav = performance.getEntriesByType?.("navigation")?.[0];
+    const type = nav?.type; // "navigate" | "reload" | "back_forward"
+
+    if (type === "reload") {
+      const stored = getStoredToken();
+      if (stored) setToken(stored);
+    }
+  }, []);
 
   // Keep token synced to localStorage
   useEffect(() => {
@@ -347,14 +362,75 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, view]);
 
+  // 15 dk = 15 * 60 * 1000
+  const IDLE_MS = 15 * 60 * 1000;
+
+  useEffect(() => {
+    if (!token) return;
+
+    let timerId = null;
+
+    const resetTimer = () => {
+      if (timerId) window.clearTimeout(timerId);
+      timerId = window.setTimeout(() => {
+        // 15 dk boyunca hiç hareket yoksa
+        showToast("Oturum zaman aşımına uğradı.");
+        logout();
+      }, IDLE_MS);
+    };
+
+    // Kullanıcı etkileşimleri -> timer sıfırlanır
+    const events = ["mousemove", "mousedown", "keydown", "scroll", "touchstart", "click"];
+    events.forEach((ev) => window.addEventListener(ev, resetTimer, { passive: true }));
+
+    // ilk başta da başlat
+    resetTimer();
+
+    return () => {
+      if (timerId) window.clearTimeout(timerId);
+      events.forEach((ev) => window.removeEventListener(ev, resetTimer));
+    };
+    // logout/showToast fonksiyonları component içinde olduğu için bağımlılığa eklemek gerekmiyor (aynı render scope)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
   async function persistOrder(nextTodos) {
     try {
+      // Reorder endpoint payload can differ by backend implementation.
+      // We'll try a few common shapes to avoid 400 while keeping UI responsive.
       const ids = nextTodos.map((t) => t.id);
-      const res = await apiFetch(`${API_TODOS}/reorder`, {
-        token,
-        method: "PUT",
-        body: JSON.stringify(ids),
-      });
+      const payloadObjects = nextTodos.map((t, index) => ({ id: t.id, orderIndex: index }));
+
+      const candidates = [
+        ids, // [1,2,3]
+        payloadObjects, // [{id, orderIndex}]
+        { ids }, // { ids: [1,2,3] }
+        { orderIds: ids }, // { orderIds: [1,2,3] }
+        { items: payloadObjects }, // { items: [{id, orderIndex}] }
+      ];
+
+      let res = null;
+      for (const body of candidates) {
+        // eslint-disable-next-line no-await-in-loop
+        const r = await apiFetch(`${API_TODOS}/reorder`, {
+          token,
+          method: "PUT",
+          body: JSON.stringify(body),
+        });
+
+        res = r;
+
+        // Success
+        if (r.ok) break;
+
+        // If it's a validation/bad request, try next shape
+        if (r.status === 400 || r.status === 415) continue;
+
+        // For other errors (401/403/500...), stop here and handle below
+        break;
+      }
+
+      if (!res) throw new Error("API isteği başarısız oldu.");
       if (res.status === 401) {
         logout();
         throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
@@ -363,7 +439,7 @@ export default function App() {
         throw new Error("Yetkin yok (403).");
       }
       if (!res.ok) throw new Error(await readError(res));
-      await loadTodos(token);
+      showToast("Sıralama kaydedildi. ✅");
     } catch (err) {
       setError(err.message);
     }
@@ -518,7 +594,7 @@ export default function App() {
       setNewDueDate("");
       setNewPriority("MEDIUM");
       setError("");
-      showToast("Görev eklendi ✅");
+      showToast("Görev eklendi. ✅");
     } catch (err) {
       setError(err.message);
     }
@@ -545,7 +621,7 @@ export default function App() {
       if (!res.ok) throw new Error(await readError(res));
       setTodos((prev) => prev.filter((t) => t.id !== id));
       setError("");
-      showToast("Görev silindi 🗑️");
+      showToast("Görev silindi. 🗑️");
     } catch (err) {
       setError(err.message);
     }
@@ -565,6 +641,7 @@ export default function App() {
           dueDate: current?.dueDate ?? null,
           priority: current?.priority ?? null,
           completed: nextCompleted,
+          pinned: !!current?.pinned,
         }),
       });
 
@@ -584,7 +661,69 @@ export default function App() {
         await loadTodos(token);
       }
       setError("");
-      showToast("Durum güncellendi ✅");
+      showToast("Durum güncellendi. ✅");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  async function togglePinTodo(id) {
+    try {
+      const current = todos.find((x) => x.id === id);
+      const nextPinned = current ? !current.pinned : true;
+
+      // Önce backend'de varsa özel endpoint'leri dene
+      const candidates = [
+        `${API_TODOS}/${id}/pin`,
+        `${API_TODOS}/${id}/pinned`,
+        `${API_TODOS}/${id}/toggle-pin`,
+      ];
+
+      let res = null;
+
+      for (const url of candidates) {
+        // eslint-disable-next-line no-await-in-loop
+        const r = await apiFetch(url, { token, method: "PUT" });
+        res = r;
+        if (r.status === 404) continue;
+        break;
+      }
+
+      // Hepsi 404 ise normal PUT ile pinned alanını update et
+      if (res && res.status === 404) {
+        res = await apiFetch(`${API_TODOS}/${id}`, {
+          token,
+          method: "PUT",
+          body: JSON.stringify({
+            title: current?.title ?? "",
+            description: current?.description ?? "",
+            dueDate: current?.dueDate ?? null,
+            priority: current?.priority ?? null,
+            completed: !!current?.completed,
+            pinned: nextPinned,
+          }),
+        });
+      }
+
+      if (!res) throw new Error("API isteği başarısız oldu.");
+      if (res.status === 401) {
+        logout();
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) throw new Error("Yetkin yok (403).");
+      if (!res.ok) throw new Error(await readError(res));
+
+      const updated = await safeJson(res);
+
+      if (updated && typeof updated === "object") {
+        setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, ...updated } : t)));
+      } else {
+        setTodos((prev) => prev.map((t) => (t.id === id ? { ...t, pinned: nextPinned } : t)));
+        await loadTodos(token);
+      }
+
+      showToast(nextPinned ? "Sabitlendi. 📌" : "Sabitleme kaldırıldı.");
+      setError("");
     } catch (err) {
       setError(err.message);
     }
@@ -602,6 +741,7 @@ export default function App() {
         dueDate: current?.dueDate ?? null,
         priority: current?.priority ?? null,
         completed: !!current?.completed,
+        pinned: !!current?.pinned,
       };
 
       const res = await apiFetch(`${API_TODOS}/${todoId}`, {
@@ -632,7 +772,7 @@ export default function App() {
         await loadTodos(token);
       }
 
-      showToast("Açıklama kaydedildi ✅");
+      showToast("Açıklama kaydedildi. ✅");
       setError("");
     } catch (err) {
       setError(err.message);
@@ -659,6 +799,7 @@ export default function App() {
           dueDate: editingDueDate ? editingDueDate : null,
           priority: (todos.find((x) => x.id === id)?.priority) ?? null,
           completed: !!(todos.find((x) => x.id === id)?.completed),
+          pinned: !!(todos.find((x) => x.id === id)?.pinned),
         }),
       });
 
@@ -682,7 +823,7 @@ export default function App() {
       setEditingTitle("");
       setEditingDueDate("");
       setError("");
-      showToast("Görev güncellendi ✍️");
+      showToast("Görev güncellendi. ✍️");
     } catch (err) {
       setError(err.message);
     }
@@ -704,7 +845,7 @@ export default function App() {
                 <img src={logo} alt="MyToDo logo" className="brandLogo" />
                 <h1 className="title">MyToDo</h1>
               </div>
-              <p className="subtitle">Giriş yap / kayıt ol</p>
+              <p className="subtitle">Giriş Yap / Kayıt Ol</p>
             </div>
           </header>
 
@@ -1069,7 +1210,10 @@ export default function App() {
             </div>
           ) : (
             <ul className="ul">
-              {(view === "trash" ? trashTodos : listTodos).map((t) => (
+              {(view === "trash" ? trashTodos : listTodos)
+                  .slice()
+                  .sort((a, b) => (b.pinned === true) - (a.pinned === true))
+                  .map((t) => (
   <li
     key={t.id}
     className={
@@ -1082,7 +1226,7 @@ export default function App() {
       if (view === "trash") return;
       setDraggingId(t.id);
       setDragOverId(null);
-      showToast("Sürükle-bırak: sıralıyor…");
+      showToast("Sürükle-Bırak: Sıralıyor…");
     }}
     onDragEnd={() => {
       if (view === "trash") return;
@@ -1257,7 +1401,7 @@ export default function App() {
               >
                 {t.dueDate}
                 {!t.completed && t.dueDate < new Date().toISOString().slice(0, 10)
-                  ? " • GEÇMİŞ"
+                  ? " • SÜRESİ DOLMUŞ"
                   : ""}
               </span>
             )}
@@ -1280,6 +1424,20 @@ export default function App() {
           <button
               type="button"
               draggable={false}
+              className={t.pinned ? "btnFilter active" : "btnFilter"}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                togglePinTodo(t.id);
+              }}
+              title={t.pinned ? "Sabitlemeyi kaldır" : "Sabitle"}
+          >
+            📌
+          </button>
+          <button
+              type="button"
+              draggable={false}
               className="btnSecondary"
               onMouseDown={(e) => e.stopPropagation()}
               onClick={(e) => {
@@ -1291,7 +1449,7 @@ export default function App() {
               }}
               title="Açıklama yaz"
           >
-            Yaz
+            Edit
           </button>
           <button
               type="button"

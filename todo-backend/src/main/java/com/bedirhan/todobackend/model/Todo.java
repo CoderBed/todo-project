@@ -34,6 +34,9 @@ public class Todo {
     @Column(nullable = false)
     private Priority priority = Priority.MEDIUM;
 
+    @Column(nullable = false)
+    private Boolean pinned = false;
+
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "user_id", nullable = false)
     private User user;
@@ -57,6 +60,9 @@ public class Todo {
 
     public Priority getPriority() { return priority; }
     public void setPriority(Priority priority) { this.priority = priority; }
+
+    public Boolean getPinned() { return pinned; }
+    public void setPinned(Boolean pinned) { this.pinned = pinned; }
 
     public User getUser() { return user; }
     public void setUser(User user) { this.user = user; }
