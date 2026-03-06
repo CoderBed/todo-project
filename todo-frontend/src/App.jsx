@@ -256,11 +256,68 @@ export default function App() {
       });
 
       // Yeni eklenen kategoriyi seç
-      if (created.id != null) setNewCategoryId(String(created.id));
+      setNewCategoryId("");
       setNewCategoryName("");
       showToast("Kategori eklendi. ✅");
     } catch (err) {
       setError(err.message || "Kategori eklenemedi.");
+    }
+  }
+
+  async function deleteCategory(categoryId) {
+    if (!categoryId) return;
+
+    try {
+      const res = await apiFetch(`${API_CATEGORIES}/${categoryId}`, {
+        token,
+        method: "DELETE",
+      });
+
+      if (res.status === 401) {
+        logout();
+        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+      }
+      if (res.status === 403) {
+        throw new Error("Yetkin yok (403).");
+      }
+
+      // Backend may return 204 No Content on success
+      if (!res.ok && res.status !== 204) {
+        const msg = await readError(res);
+        throw new Error(msg);
+      }
+
+      // UI: remove from category list
+      setCategories((prev) => prev.filter((c) => String(c.id) !== String(categoryId)));
+
+      // Silinen kategoriyi görevlerden de kaldır
+      setTodos((prev) =>
+          prev.map((t) => {
+            const cid = t.categoryId ?? t.category?.id ?? null;
+
+            if (String(cid) === String(categoryId)) {
+              return {
+                ...t,
+                categoryId: null,
+                category: null,
+                categoryName: null,
+              };
+            }
+
+            return t;
+          })
+      );
+
+      // If currently selected in NEW todo form, reset it
+      setNewCategoryId((prev) => (String(prev) === String(categoryId) ? "" : prev));
+
+      showToast("Kategori silindi. 🗑️");
+      setError("");
+
+      // Also reload categories to be safe (in case backend has different state)
+      await loadCategories(token);
+    } catch (err) {
+      setError(err.message || "Kategori silinemedi.");
     }
   }
 
@@ -1125,13 +1182,17 @@ export default function App() {
             <option value="HIGH">HIGH</option>
           </select>
           <select
-            className="select"
-            value={newCategoryId}
-            onChange={(e) => setNewCategoryId(e.target.value)}
-            title="Kategori"
+              className="select"
+              value={newCategoryId}
+              onChange={(e) => setNewCategoryId(e.target.value)}
+              title="Kategori"
           >
-            <option value="" disabled hidden>
+            <option value="" hidden>
               Seç…
+            </option>
+
+            <option value="none">
+              Yok
             </option>
             {categories.map((c) => (
               <option key={c.id} value={String(c.id)}>
@@ -1167,6 +1228,39 @@ export default function App() {
             + Ekle
           </button>
         </div>
+
+        {categories.length > 0 && (
+          <div className="categoryListRow" style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {categories.map((c) => (
+              <span
+                key={c.id}
+                className="categoryBadge"
+                style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                title="Kategori"
+              >
+                {c.name}
+                <button
+                    type="button"
+                    className="btnIcon"
+                    onClick={() => deleteCategory(c.id)}
+                    title="Kategoriyi sil"
+                    style={{
+                      width: 26,
+                      height: 26,
+                      borderRadius: 10,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      padding: 0,
+                      fontSize: "16px"
+                    }}
+                >
+                    🗑
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
 
         <div className="filters" style={{ marginTop: 10 }}>
           <button
