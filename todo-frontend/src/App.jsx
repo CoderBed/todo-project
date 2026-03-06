@@ -205,7 +205,12 @@ export default function App() {
       });
 
       if (!res.ok) {
-        // register on existing user may return 409
+        // If login credentials are wrong
+        if (authMode === "login" && res.status === 401) {
+          throw new Error("Hatalı email veya şifre girdiniz.");
+        }
+
+        // register on existing user may return 409 or other validation errors
         const msg = await readError(res);
         throw new Error(msg);
       }
@@ -1067,20 +1072,41 @@ export default function App() {
             <button
               type="button"
               className={authMode === "login" ? "btnFilter active" : "btnFilter"}
-              onClick={() => setAuthMode("login")}
+              onClick={() => {
+                setAuthMode("login");
+                setAuthEmail("");
+                setAuthPassword("");
+                setError("");
+              }}
             >
               Login
             </button>
             <button
               type="button"
               className={authMode === "register" ? "btnFilter active" : "btnFilter"}
-              onClick={() => setAuthMode("register")}
+              onClick={() => {
+                setAuthMode("register");
+                setAuthEmail("");
+                setAuthPassword("");
+                setError("");
+              }}
             >
               Register
             </button>
           </div>
 
-          <form onSubmit={submitAuth} className="addForm">
+          {authMode === "register" && (
+            <div style={{ marginTop: 10, display: "flex", gap: 16, flexWrap: "wrap" }}>
+              {authEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authEmail) && (
+                <div className="hint">Geçerli bir email adresi giriniz.</div>
+              )}
+              {authPassword && authPassword.length < 6 && (
+                <div className="hint">Şifre en az 6 karakter olmalı.</div>
+              )}
+            </div>
+          )}
+
+          <form onSubmit={submitAuth} className="addForm" style={{ marginTop: 0 }}>
             <input
               className="input"
               value={authEmail}
@@ -1097,18 +1123,6 @@ export default function App() {
               type="password"
               autoComplete={authMode === "login" ? "current-password" : "new-password"}
             />
-            {authMode === "register" &&
-              authEmail &&
-              !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authEmail) && (
-                <div className="hint" style={{ marginTop: 8 }}>
-                  Geçerli bir email adresi giriniz.
-                </div>
-              )}
-            {authMode === "register" && authPassword && authPassword.length < 6 && (
-              <div className="hint" style={{ marginTop: 8 }}>
-                Şifre en az 6 karakter olmalı.
-              </div>
-            )}
             <button
               className="btnPrimary"
               type="submit"
@@ -1123,7 +1137,7 @@ export default function App() {
             </button>
           </form>
 
-          {error && <div className="error">Hata: {error}</div>}
+          {error && <div className="error">{error}</div>}
         </div>
       </div>
     );
@@ -1524,7 +1538,7 @@ export default function App() {
           </div>
         )}
 
-        {error && <div className="error">Hata: {error}</div>}
+        {error && <div className="error">{error}</div>}
 
         <div className={"list" + (listTransitioning ? " isSwitching" : "")}>
           {loading ? (
