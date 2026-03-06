@@ -61,10 +61,14 @@ body::before {
 .header {
   display: flex;
   gap: 16px;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
   margin-bottom: 14px;
+}
+
+.header > :nth-child(2) {
+  transform: translateX(-28px);
 }
 
 .title {
@@ -110,6 +114,8 @@ body::before {
   background: rgba(0, 0, 0, 0.25);
   color: #e5e7eb;
   outline: none;
+  height: 44px;
+  box-sizing: border-box;
 }
 
 .input::placeholder {
@@ -123,6 +129,8 @@ body::before {
   background: rgba(59, 130, 246, 0.18);
   color: #e5e7eb;
   cursor: pointer;
+  height: 44px;
+  box-sizing: border-box;
 }
 
 .btnPrimary:disabled {
@@ -145,11 +153,49 @@ body::before {
   color: #e5e7eb;
   cursor: pointer;
   font-size: 13px;
+  height: 44px;
+  box-sizing: border-box;
+}
+
+.btnFilter:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  pointer-events: none;
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.38);
+  box-shadow: none;
+}
+
+.categoryAddRow .btnFilter:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #e5e7eb;
+  box-shadow: none;
 }
 
 .btnFilter.active {
   background: rgba(34, 197, 94, 0.18);
   border-color: rgba(34, 197, 94, 0.28);
+}
+
+/* Filtreleri Göster/Gizle butonu aktifken de normal filtre rengiyle kalsın */
+button[title="Filtreleri aç / kapat"].btnFilter.active {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Priority filtreleri aktifken turuncu görünsün */
+button[title="Öncelik filtresi"].btnFilter.active,
+button[title="HIGH"].btnFilter.active,
+button[title="MEDIUM"].btnFilter.active,
+button[title="LOW"].btnFilter.active {
+  background: rgba(251, 146, 60, 0.18);
+  border-color: rgba(251, 146, 60, 0.32);
+  color: #ffd8b0;
 }
 
 .error {
@@ -164,6 +210,15 @@ body::before {
 
 .list {
   margin-top: 14px;
+  transition: opacity 220ms ease, transform 220ms ease, filter 220ms ease;
+  will-change: opacity, transform, filter;
+}
+
+.list.isSwitching {
+  opacity: 0.35;
+  transform: translateY(8px);
+  filter: blur(1px);
+  pointer-events: none;
 }
 
 .hint {
@@ -343,6 +398,8 @@ body::before {
   border-radius: 12px;
   border: 1px solid rgba(255,255,255,0.10);
   background: rgba(0,0,0,0.18);
+  box-sizing: border-box;
+  overflow: hidden;
 }
 
 .descTextarea{
@@ -356,6 +413,7 @@ body::before {
   background: rgba(0,0,0,0.25);
   color: #e5e7eb;
   outline: none;
+  box-sizing: border-box;
 }
 
 .descEditorActions{
@@ -440,6 +498,8 @@ body::before {
 
   outline: none;
   color-scheme: dark; /* date picker popup + icon dark uyum */
+  height: 44px;
+  box-sizing: border-box;
 }
 
 .dateInput::-webkit-calendar-picker-indicator {
@@ -452,6 +512,7 @@ body::before {
 .prioritySelect,
 .addForm select {
   height: 44px;
+  box-sizing: border-box;
   padding: 10px 12px;
   border-radius: 12px;
 
@@ -583,6 +644,11 @@ body::before {
   background: rgba(34, 197, 94, 0.9);
 }
 
+.day.overdue .dot {
+  background: #ef4444;
+  box-shadow: 0 0 10px rgba(239, 68, 68, 0.55);
+}
+
 /* Priority Badge */
 .priorityBadge {
   margin-left: 8px;
@@ -628,7 +694,7 @@ body::before {
 }
 
 .brandLogo{
-  width:48px;   /* MyToDo yazısı kadar görünmesi için burayı arttır/azalt */
+  width:48px;
   height:48px;
   object-fit:contain;
 }
@@ -643,8 +709,6 @@ body::before {
   font-weight: 650;
   line-height: 1;
   white-space: nowrap;
-
-  /* hoş accent */
   color: rgba(210, 230, 255, 0.95);
   background: rgba(80, 140, 255, 0.16);
   border: 1px solid rgba(80, 140, 255, 0.32);

@@ -206,7 +206,7 @@ public class TodoController {
         todo.setOrderIndex(req.getOrderIndex());
         todo.setDueDate(req.getDueDate());
         todo.setPriority(req.getPriority() == null ? Priority.MEDIUM : req.getPriority());
-        if (req.getCategoryId() != null) {
+        if (req.getCategoryId() != null && req.getCategoryId() > 0) {
             Category category = requireCategoryForUser(req.getCategoryId(), user);
             todo.setCategory(category);
         }
@@ -263,9 +263,13 @@ public class TodoController {
             if (req.dueDate != null) todo.setDueDate(req.dueDate);
             if (req.orderIndex != null) todo.setOrderIndex(req.orderIndex);
             if (req.priority != null) todo.setPriority(req.priority);
-            if (req.categoryId != null) {
-                Category category = requireCategoryForUser(req.categoryId, user);
-                todo.setCategory(category);
+            if (req.categoryId() != null) {
+                if (req.categoryId() <= 0) {
+                    todo.setCategory(null);
+                } else {
+                    Category category = requireCategoryForUser(req.categoryId(), user);
+                    todo.setCategory(category);
+                }
             }
         }
 
