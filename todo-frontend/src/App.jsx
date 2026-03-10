@@ -1466,7 +1466,7 @@ export default function App() {
 
 
 
-        {filtersOpen && view !== "stats" && (
+        {filtersOpen && view === "todos" && (
           <>
             {categories.length > 0 && (
               <div className="categoryListRow" style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -1710,155 +1710,168 @@ export default function App() {
         {view === "stats" ? (
           <div style={{ marginTop: 24, marginBottom: 24 }}>
             <h2>📊 Görev İstatistikleri</h2>
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 24, marginTop: 16 }}>
-              <div style={{ minWidth: 280 }}>
-                <h3>Genel</h3>
-                <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "repeat(2, minmax(320px, 1fr))",
+                gap: 20,
+                marginTop: 16,
+                alignItems: "stretch",
+              }}
+            >
+              <section
+                style={{
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 18,
+                  padding: 18,
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
+                  maxHeight: 520,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <h3 style={{ margin: 0, marginBottom: 14 }}>Genel</h3>
+                <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
                   <div
-                      style={{
-                        width: 160,
-                        height: 160,
-                        borderRadius: "50%",
-                        background: donutBackground(generalChartData),
-                        position: "relative",
-                        flex: "0 0 auto",
-                      }}
+                    style={{
+                      width: 160,
+                      height: 160,
+                      borderRadius: "50%",
+                      background: donutBackground(generalChartData),
+                      position: "relative",
+                      flex: "0 0 auto",
+                    }}
                   >
                     <div
-                        style={{
-                          position: "absolute",
-                          inset: 22,
-                          borderRadius: "50%",
-                          background: "#111827",
-                          display: "flex",
-                          flexDirection: "column",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          textAlign: "center",
-                        }}
+                      style={{
+                        position: "absolute",
+                        inset: 22,
+                        borderRadius: "50%",
+                        background: "#111827",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        textAlign: "center",
+                      }}
                     >
                       <div style={{ fontSize: 12, opacity: 0.72 }}>Toplam</div>
                       <div style={{ fontSize: 28, fontWeight: 700 }}>{statsOverview.total}</div>
                     </div>
                   </div>
 
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 180 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 180, flex: 1 }}>
                     {generalChartData.map((item) => (
-                        <div key={item.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: "50%",
-                  background: item.color,
-                  display: "inline-block",
-                }}
-            />
-                            <span>{item.label}</span>
-                          </div>
-                          <b>{item.value}</b>
-                        </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div style={{ minWidth: 220, marginLeft: 76 }}>
-                <h3>Kategoriye Göre</h3>
-                <ul style={{ listStyle: "none", padding: 0 }}>
-                  {statsByCategory.length === 0 && <li>Hiç kategori yok.</li>}
-                  {statsByCategory.map((cat) => (
-                    <li key={cat.id} style={{ marginBottom: 6 }}>
-                      <span style={{ fontWeight: 600 }}>{cat.name}</span>
-                      <span style={{ marginLeft: 8 }}>
-                        <span title="Toplam">{cat.total}</span>
-                        {" | "}
-                        <span title="Aktif">{cat.active} aktif</span>
-                        {" | "}
-                        <span title="Tamamlanan">{cat.completed} tamamlandı</span>
-                      </span>
-                      <div style={{ background: "#eee", height: 8, borderRadius: 4, marginTop: 3, width: "100%" }}>
-                        <div
-                          style={{
-                            background: "#1b8cfc",
-                            height: 8,
-                            borderRadius: 4,
-                            width: `${(cat.total / maxCategoryTotal) * 100}%`,
-                            transition: "width 0.4s",
-                          }}
-                        />
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div style={{ minWidth: 280 }}>
-                <h3>Son Tarihe Göre</h3>
-                <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap", marginTop: 8 }}>
-                  <div
-                      style={{
-                        width: 160,
-                        height: 160,
-                        borderRadius: "50%",
-                        background: donutBackground(dueChartData),
-                        position: "relative",
-                        flex: "0 0 auto",
-                      }}
-                  >
-                    <div
+                      <div
+                        key={item.label}
                         style={{
-                          position: "absolute",
-                          inset: 22,
-                          borderRadius: "50%",
-                          background: "#111827",
                           display: "flex",
-                          flexDirection: "column",
                           alignItems: "center",
-                          justifyContent: "center",
-                          textAlign: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
                         }}
-                    >
-                      <div style={{ fontSize: 12, opacity: 0.72 }}>Tarihli</div>
-                      <div style={{ fontSize: 28, fontWeight: 700 }}>
-                        {statsByDue.today + statsByDue.future + statsByDue.overdue}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 190 }}>
-                    {dueChartData.map((item) => (
-                        <div key={item.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span
-                style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: "50%",
-                  background: item.color,
-                  display: "inline-block",
-                }}
-            />
-                            <span>{item.label}</span>
-                          </div>
-                          <b>{item.value}</b>
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span
+                            style={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: "50%",
+                              background: item.color,
+                              display: "inline-block",
+                            }}
+                          />
+                          <span>{item.label}</span>
                         </div>
+                        <b>{item.value}</b>
+                      </div>
                     ))}
                   </div>
                 </div>
-              </div>
-              <div style={{ minWidth: 220, marginLeft: 76 }}>
-                <h3>Önceliğe Göre</h3>
-                <ul style={{ listStyle: "none", padding: 0 }}>
+              </section>
+
+              <section
+                style={{
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 18,
+                  padding: 18,
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
+                  maxHeight: 260,
+                  display: "flex",
+                  flexDirection: "column",
+                }}
+              >
+                <h3 style={{ margin: 0, marginBottom: 14 }}>Kategoriye Göre</h3>
+                {statsByCategory.length === 0 ? (
+                  <div className="hint">Hiç kategori yok.</div>
+                ) : (
+                  <ul
+                    style={{
+                      listStyle: "none",
+                      padding: 0,
+                      margin: 0,
+                      overflowY: "auto",
+                      paddingRight: 6,
+                      flex: 1,
+                    }}
+                  >
+                    {statsByCategory.map((cat) => (
+                      <li key={cat.id} style={{ marginBottom: 12 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+                          <span style={{ fontWeight: 600 }}>{cat.name}</span>
+                          <span style={{ opacity: 0.86 }}>{cat.total}</span>
+                        </div>
+                        <div style={{ fontSize: 13, opacity: 0.78, marginBottom: 6 }}>
+                          Aktif: {cat.active} • Tamamlanan: {cat.completed}
+                        </div>
+                        <div style={{ background: "rgba(255,255,255,0.10)", height: 8, borderRadius: 999, width: "100%" }}>
+                          <div
+                            style={{
+                              background: "#1b8cfc",
+                              height: 8,
+                              borderRadius: 999,
+                              width: `${(cat.total / maxCategoryTotal) * 100}%`,
+                              transition: "width 0.4s",
+                            }}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+
+              <section
+                style={{
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 18,
+                  padding: 18,
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
+                }}
+              >
+                <h3 style={{ margin: 0, marginBottom: 14 }}>Önceliğe Göre</h3>
+                <ul style={{ listStyle: "none", padding: 0, margin: 0 }}>
                   {statsByPriority.map((p) => (
-                    <li key={p.key} style={{ marginBottom: 6 }}>
-                      <span style={{ fontWeight: 600 }}>{p.label}</span>
-                      <span style={{ marginLeft: 8 }}>{p.total}</span>
-                      <div style={{ background: "#eee", height: 8, borderRadius: 4, marginTop: 3, width: "100%" }}>
+                    <li key={p.key} style={{ marginBottom: 12 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", gap: 12, marginBottom: 6 }}>
+                        <span style={{ fontWeight: 600 }}>{p.label}</span>
+                        <span>{p.total}</span>
+                      </div>
+                      <div style={{ background: "rgba(255,255,255,0.10)", height: 8, borderRadius: 999, width: "100%" }}>
                         <div
                           style={{
-                            background: "#fbbf24",
+                            background:
+                              p.key === "HIGH"
+                                ? "#ef4444"
+                                : p.key === "MEDIUM"
+                                  ? "#fbbf24"
+                                  : "#22c55e",
                             height: 8,
-                            borderRadius: 4,
+                            borderRadius: 999,
                             width: `${(p.total / maxPriorityTotal) * 100}%`,
                             transition: "width 0.4s",
                           }}
@@ -1867,14 +1880,83 @@ export default function App() {
                     </li>
                   ))}
                 </ul>
-              </div>
+              </section>
+
+              <section
+                style={{
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 18,
+                  padding: 18,
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
+                }}
+              >
+                <h3 style={{ margin: 0, marginBottom: 14 }}>Son Tarihe Göre</h3>
+                <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
+                  <div
+                    style={{
+                      width: 160,
+                      height: 160,
+                      borderRadius: "50%",
+                      background: donutBackground(dueChartData),
+                      position: "relative",
+                      flex: "0 0 auto",
+                    }}
+                  >
+                    <div
+                      style={{
+                        position: "absolute",
+                        inset: 22,
+                        borderRadius: "50%",
+                        background: "#111827",
+                        display: "flex",
+                        flexDirection: "column",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        textAlign: "center",
+                      }}
+                    >
+                      <div style={{ fontSize: 12, opacity: 0.72 }}>Tarihli</div>
+                      <div style={{ fontSize: 28, fontWeight: 700 }}>
+                        {statsByDue.today + statsByDue.future + statsByDue.overdue}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 190, flex: 1 }}>
+                    {dueChartData.map((item) => (
+                      <div
+                        key={item.label}
+                        style={{
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "space-between",
+                          gap: 12,
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <span
+                            style={{
+                              width: 12,
+                              height: 12,
+                              borderRadius: "50%",
+                              background: item.color,
+                              display: "inline-block",
+                            }}
+                          />
+                          <span>{item.label}</span>
+                        </div>
+                        <b>{item.value}</b>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
         ) : (
         <div className={"list" + (listTransitioning ? " isSwitching" : "")}>
-          {loading ? (
-            <div className="hint">Yükleniyor…</div>
-          ) : listTodos.length === 0 ? (
+          {listTodos.length === 0 && !loading ? (
             <div className="hint">
               {selectedDueDates.length
                   ? "Seçili günlere atanmış görev yok."
