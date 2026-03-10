@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import logo from "./assets/logo.png";
 
@@ -107,10 +107,17 @@ export default function App() {
   const [selectedDueDates, setSelectedDueDates] = useState([]);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterSections, setFilterSections] = useState({
+    category: true,
+    status: false,
+    priority: false,
+  });
   const [toast, setToast] = useState("");
   const [draggingId, setDraggingId] = useState(null);
+  const [recentlyAddedId, setRecentlyAddedId] = useState(null);
   const [dragOverId, setDragOverId] = useState(null);
   const [selectedTodoIds, setSelectedTodoIds] = useState([]);
+  const [selectedTrashIds, setSelectedTrashIds] = useState([]);
 
   const [editingId, setEditingId] = useState(null);
   const [editingTitle, setEditingTitle] = useState("");
@@ -120,13 +127,16 @@ export default function App() {
   const [descCategoryId, setDescCategoryId] = useState("none");
   const [descPriority, setDescPriority] = useState("MEDIUM");
   const [expandedDescId, setExpandedDescId] = useState(null);
+  const [collapsedCategoryIds, setCollapsedCategoryIds] = useState([]);
+  const [categoryAccentByKey, setCategoryAccentByKey] = useState({});
 
   const [newPriority, setNewPriority] = useState("MEDIUM"); // LOW | MEDIUM | HIGH
+  const newTodoInputRef = useRef(null);
+  const newCategoryInputRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [listTransitioning, setListTransitioning] = useState(false);
+  const lastReorderToastAtRef = useRef(0);
 
-  // Some browsers / custom CSS may prevent the native date picker from opening.
-  // Calling showPicker() (when available) forces it to open on a user gesture.
   function openNativeDatePicker(e) {
     const el = e?.currentTarget;
     if (el && typeof el.showPicker === "function") {
@@ -182,6 +192,7 @@ export default function App() {
       setFiltersOpen(false);
       setCalendarOpen(false);
       setSelectedTodoIds([]);
+      setSelectedTrashIds([]);
 
       if (token) {
         await loadTodos(token);
@@ -196,6 +207,7 @@ export default function App() {
     setFiltersOpen(false);
     setCalendarOpen(false);
     setSelectedTodoIds([]);
+    setSelectedTrashIds([]);
     switchMainView("todos");
   }
 
@@ -208,6 +220,7 @@ export default function App() {
     setTokenAndPersist("");
     setTodos([]);
     setSelectedTodoIds([]);
+    setSelectedTrashIds([]);
     setError("");
     setAuthEmail("");
     setAuthPassword("");
@@ -219,6 +232,134 @@ export default function App() {
     setSelectedTodoIds((prev) =>
       prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
     );
+  }
+
+  function toggleSelectedTrash(id) {
+    setSelectedTrashIds((prev) =>
+      prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
+    );
+  }
+
+  function clearSelectedTrash() {
+    setSelectedTrashIds([]);
+  }
+
+  async function bulkHardDeleteSelectedTrash() {
+    if (!selectedTrashIds.length) return;
+
+    const ok = window.confirm(`${selectedTrashIds.length} görev çöp kutusundan kalıcı olarak silinecek. Emin misin?`);
+    if (!ok) return;
+
+    try {
+      const ids = [...selectedTrashIds];
+
+      for (const id of ids) {
+        const candidates = [
+          `${API_TODOS}/${id}/hard`,
+          `${API_TODOS}/${id}/hard-delete`,
+          `${API_TODOS}/${id}/permanent`,
+        ];
+
+        let res = null;
+        for (const url of candidates) {
+          // eslint-disable-next-line no-await-in-loop
+          const r = await apiFetch(url, {
+            token,
+            method: "DELETE",
+          });
+
+          if (r.status === 404) {
+            res = r;
+            continue;
+          }
+
+          res = r;
+          break;
+        }
+
+        if (!res) throw new Error("API isteği başarısız oldu.");
+
+        if (res.status === 401) {
+          logout();
+          throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+        }
+        if (res.status === 403) {
+          throw new Error("Yetkin yok (403).");
+        }
+        if (res.status === 404) {
+          throw new Error(
+            "Kalıcı sil endpoint'i bulunamadı (404). Backend'de /api/todos/{id}/hard (veya hard-delete/permanent) tanımlı mı kontrol et."
+          );
+        }
+        if (!res.ok) throw new Error(await readError(res));
+      }
+
+      setTrashTodos((prev) => prev.filter((t) => !ids.includes(t.id)));
+      setSelectedTrashIds([]);
+      setError("");
+      showToast(`${ids.length} görev çöp kutusundan kalıcı olarak silindi. 🗑️`);
+    } catch (err) {
+      setError(err.message || "Toplu kalıcı silme işlemi başarısız oldu.");
+    }
+  }
+
+  async function emptyTrash() {
+    if (!trashTodos.length) return;
+
+    const ok = window.confirm(`Çöp kutusundaki ${trashTodos.length} görev kalıcı olarak silinecek. Emin misin?`);
+    if (!ok) return;
+
+    try {
+      const ids = trashTodos.map((t) => t.id);
+
+      for (const id of ids) {
+        const candidates = [
+          `${API_TODOS}/${id}/hard`,
+          `${API_TODOS}/${id}/hard-delete`,
+          `${API_TODOS}/${id}/permanent`,
+        ];
+
+        let res = null;
+        for (const url of candidates) {
+          // eslint-disable-next-line no-await-in-loop
+          const r = await apiFetch(url, {
+            token,
+            method: "DELETE",
+          });
+
+          if (r.status === 404) {
+            res = r;
+            continue;
+          }
+
+          res = r;
+          break;
+        }
+
+        if (!res) throw new Error("API isteği başarısız oldu.");
+
+        if (res.status === 401) {
+          logout();
+          throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
+        }
+        if (res.status === 403) {
+          throw new Error("Yetkin yok (403).");
+        }
+        if (res.status === 404) {
+          throw new Error(
+              "Kalıcı sil endpoint'i bulunamadı (404). Backend'de /api/todos/{id}/hard (veya hard-delete/permanent) tanımlı mı kontrol et."
+          );
+        }
+        if (!res.ok) throw new Error(await readError(res));
+      }
+
+      setTrashTodos([]);
+      setSelectedTrashIds([]);
+      setError("");
+      showToast("Çöp kutusu tamamen boşaltıldı. 🗑️");
+    } catch (err) {
+      setError(err.message || "Çöp kutusu boşaltılamadı.");
+    }
   }
 
   function clearSelectedTodos() {
@@ -360,6 +501,7 @@ export default function App() {
       if (!created || typeof created !== "object") {
         await loadCategories(token);
         setNewCategoryName("");
+        window.requestAnimationFrame(() => newCategoryInputRef.current?.focus());
         return;
       }
 
@@ -373,6 +515,7 @@ export default function App() {
       setNewCategoryId("");
       setNewCategoryName("");
       showToast("Kategori eklendi. ✅");
+      window.requestAnimationFrame(() => newCategoryInputRef.current?.focus());
     } catch (err) {
       setError(err.message || "Kategori eklenemedi.");
     }
@@ -510,61 +653,10 @@ export default function App() {
 
       // UI: trash listesinden çıkar, normal listeyi de tazele
       setTrashTodos((prev) => prev.filter((t) => t.id !== id));
+      setSelectedTrashIds((prev) => prev.filter((x) => x !== id));
       await loadTodos(token);
 
       showToast("Geri yüklendi. ✅");
-      setError("");
-    } catch (err) {
-      setError(err.message);
-    }
-  }
-
-  async function hardDeleteTodo(id) {
-    const ok = window.confirm("Bu görev kalıcı olarak silinecek. Emin misin?");
-    if (!ok) return;
-
-    try {
-      // Some backends use different permanent-delete paths. We'll try a couple of common ones.
-      const candidates = [
-        `${API_TODOS}/${id}/hard`,
-        `${API_TODOS}/${id}/hard-delete`,
-        `${API_TODOS}/${id}/permanent`,
-      ];
-
-      let res = null;
-      for (const url of candidates) {
-        // eslint-disable-next-line no-await-in-loop
-        const r = await apiFetch(url, {
-          token,
-          method: "DELETE",
-        });
-
-        // If endpoint doesn't exist, try next candidate
-        if (r.status === 404) {
-          res = r;
-          continue;
-        }
-
-        res = r;
-        break;
-      }
-
-      if (!res) throw new Error("API isteği başarısız oldu.");
-
-      if (res.status === 401) {
-        logout();
-        throw new Error("Oturum süresi dolmuş olabilir. Lütfen tekrar giriş yap.");
-      }
-      if (res.status === 403) throw new Error("Yetkin yok (403).");
-      if (res.status === 404) {
-        throw new Error(
-          "Kalıcı sil endpoint'i bulunamadı (404). Backend'de /api/todos/{id}/hard (veya hard-delete/permanent) tanımlı mı kontrol et."
-        );
-      }
-      if (!res.ok) throw new Error(await readError(res));
-
-      setTrashTodos((prev) => prev.filter((t) => t.id !== id));
-      showToast("Kalıcı olarak silindi. ❌");
       setError("");
     } catch (err) {
       setError(err.message);
@@ -685,7 +777,11 @@ export default function App() {
         throw new Error("Yetkin yok (403).");
       }
       if (!res.ok) throw new Error(await readError(res));
-      showToast("Sıralama kaydedildi. ✅");
+      const now = Date.now();
+      if (now - lastReorderToastAtRef.current > 1200) {
+        showToast("Sıralama kaydedildi. ✅");
+        lastReorderToastAtRef.current = now;
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -722,6 +818,51 @@ export default function App() {
     }
     return map;
   }, [categories]);
+
+  function toggleCategoryCollapse(categoryKey) {
+    setCollapsedCategoryIds((prev) =>
+      prev.includes(categoryKey) ? prev.filter((x) => x !== categoryKey) : [...prev, categoryKey]
+    );
+  }
+
+  function toggleFilterSection(key) {
+    setFilterSections((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  }
+
+  const CATEGORY_COLOR_OPTIONS = [
+    "#60a5fa",
+    "#34d399",
+    "#f59e0b",
+    "#f472b6",
+    "#a78bfa",
+    "#f87171",
+    "#22c55e",
+    "#38bdf8",
+    "#fb7185",
+    "#f97316",
+    "#84cc16",
+    "#14b8a6",
+    "#8b5cf6",
+    "#ec4899",
+    "#eab308",
+    "#06b6d4",
+  ];
+
+  function defaultCategoryAccent(categoryKey) {
+    let hash = 0;
+    for (let i = 0; i < categoryKey.length; i += 1) {
+      hash = (hash * 31 + categoryKey.charCodeAt(i)) >>> 0;
+    }
+    return CATEGORY_COLOR_OPTIONS[hash % CATEGORY_COLOR_OPTIONS.length];
+  }
+
+  function getCategoryAccent(categoryKey) {
+    return categoryAccentByKey[categoryKey] || defaultCategoryAccent(categoryKey);
+  }
+
 
   const categoryCountById = useMemo(() => {
     const counts = {};
@@ -815,6 +956,52 @@ export default function App() {
     if (!selectedDueDates.length) return visibleTodos;
     return visibleTodos.filter((t) => selectedDueDates.includes(t.dueDate));
   }, [visibleTodos, selectedDueDates]);
+
+  const groupedListTodos = useMemo(() => {
+    if (view === "trash") {
+      return [{ key: "trash", title: "", items: trashTodos, collapsible: false }];
+    }
+
+    const pinned = listTodos.filter((t) => !!t.pinned);
+    const regular = listTodos.filter((t) => !t.pinned);
+    const groups = [];
+
+    if (pinned.length > 0) {
+      groups.push({ key: "pinned", title: "📌 ", items: pinned, collapsible: true });
+    }
+
+    const byCategory = new Map();
+
+    for (const todo of regular) {
+      const rawCategoryId = todo.categoryId ?? todo.category?.id ?? null;
+      const numericCategoryId = rawCategoryId != null ? Number(rawCategoryId) : null;
+      const categoryKey = numericCategoryId != null ? `cat-${numericCategoryId}` : "cat-none";
+      const categoryTitle = numericCategoryId != null
+        ? (todo.categoryName ?? categoryNameById.get(numericCategoryId) ?? "Kategorisiz")
+        : "Kategorisiz";
+
+      if (!byCategory.has(categoryKey)) {
+        byCategory.set(categoryKey, {
+          key: categoryKey,
+          title: categoryTitle,
+          items: [],
+          collapsible: true,
+        });
+      }
+
+      byCategory.get(categoryKey).items.push(todo);
+    }
+
+    const sortedCategoryGroups = [...byCategory.values()].sort((a, b) => {
+      if (a.title === "Kategorisiz" && b.title !== "Kategorisiz") return 1;
+      if (a.title !== "Kategorisiz" && b.title === "Kategorisiz") return -1;
+      return a.title.localeCompare(b.title, "tr");
+    });
+
+    groups.push(...sortedCategoryGroups);
+
+    return groups;
+  }, [view, listTodos, trashTodos, categoryNameById, categoryAccentByKey]);
 
   // --- Stats Overview ---
   const statsOverview = useMemo(() => {
@@ -942,6 +1129,8 @@ export default function App() {
       const created = await safeJson(res);
       if (created && typeof created === "object") {
         setTodos((prev) => [created, ...prev]);
+        setRecentlyAddedId(created.id);
+        setTimeout(() => setRecentlyAddedId(null), 900);
       } else {
         // If backend returns empty body, just reload
         await loadTodos(token);
@@ -952,6 +1141,7 @@ export default function App() {
       setNewCategoryId("");
       setError("");
       showToast("Görev eklendi. ✅");
+      window.requestAnimationFrame(() => newTodoInputRef.current?.focus());
     } catch (err) {
       setError(err.message);
     }
@@ -960,6 +1150,10 @@ export default function App() {
   useEffect(() => {
     setSelectedTodoIds((prev) => prev.filter((id) => todos.some((t) => t.id === id)));
   }, [todos]);
+
+  useEffect(() => {
+    setSelectedTrashIds((prev) => prev.filter((id) => trashTodos.some((t) => t.id === id)));
+  }, [trashTodos]);
 
   async function toggleTodo(id) {
     try {
@@ -1347,8 +1541,50 @@ export default function App() {
           </div>
 
           <div style={{ flex: "0 0 auto", display: "flex", justifyContent: "flex-end" }}>
-            <button type="button" className="btnFilter" onClick={logout} title="Çıkış">
-              Çıkış
+            <button
+              type="button"
+              className="btnFilter"
+              onClick={logout}
+              title="Çıkış"
+              aria-label="Çıkış"
+              style={{
+                width: 40,
+                height: 40,
+                borderRadius: 14,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                padding: 0,
+                transition: "transform 0.18s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "scale(1.04)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "scale(1)";
+              }}
+            >
+              <svg
+                width="28"
+                height="28"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 3V12"
+                  stroke="#ef4444"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M7.05 5.8C5.22 7.08 4 9.19 4 11.59C4 15.49 7.13 18.65 11 18.65C14.87 18.65 18 15.49 18 11.59C18 9.19 16.78 7.08 14.95 5.8"
+                  stroke="#ef4444"
+                  strokeWidth="2.6"
+                  strokeLinecap="round"
+                />
+              </svg>
             </button>
           </div>
         </header>
@@ -1376,14 +1612,53 @@ export default function App() {
             </button>
           </div>
         )}
-
+        {view === "trash" && trashTodos.length > 0 && (
+          <div className="filters" style={{ marginTop: 10, marginBottom: 10 }}>
+            <span className="pill">
+              Çöp kutusunda toplam: <b>{trashTodos.length}</b>
+            </span>
+            <button
+              type="button"
+              className="btnDanger"
+              onClick={emptyTrash}
+              title="Çöp kutusunu tamamen boşalt"
+            >
+              Çöp Kutusunu Boşalt
+            </button>
+          </div>
+        )}
+{view === "trash" && selectedTrashIds.length > 0 && (
+  <div className="filters" style={{ marginTop: 12, marginBottom: 10 }}>
+            <span className="pill">
+              Seçili görev: <b>{selectedTrashIds.length}</b>
+            </span>
+            <button
+              type="button"
+              className="btnFilter"
+              onClick={clearSelectedTrash}
+              title="Seçimi temizle"
+            >
+              Seçimi Temizle
+            </button>
+            <button
+              type="button"
+              className="btnDanger"
+              onClick={bulkHardDeleteSelectedTrash}
+              title="Seçili görevleri kalıcı sil"
+            >
+              {selectedTrashIds.length === 1 ? "Sil" : "Toplu Sil"}
+            </button>
+          </div>
+        )}
         {view !== "trash" && view !== "stats" && (
         <form onSubmit={addTodo} className="addForm">
           <input
-            className="input"
-            value={newTitle}
-            onChange={(e) => setNewTitle(e.target.value)}
-            placeholder="Yeni görev yaz…"
+              ref={newTodoInputRef}
+              className="input"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="Yeni görev yaz…"
+              style={{ height: 38 }}
           />
           <input
             className="dateInput"
@@ -1393,12 +1668,14 @@ export default function App() {
             onFocus={openNativeDatePicker}
             onChange={(e) => setNewDueDate(e.target.value)}
             title="Son tarih"
+            style={{ height: 38 }}
           />
           <select
             className="select"
             value={newPriority}
             onChange={(e) => setNewPriority(e.target.value)}
             title="Öncelik"
+            style={{ height: 38 }}
           >
             <option value="LOW">LOW</option>
             <option value="MEDIUM">MEDIUM</option>
@@ -1409,6 +1686,7 @@ export default function App() {
               value={newCategoryId}
               onChange={(e) => setNewCategoryId(e.target.value)}
               title="Kategori"
+              style={{ height: 38 }}
           >
             <option value="" hidden>
               Seç…
@@ -1428,6 +1706,7 @@ export default function App() {
             type="submit"
             disabled={!newTitle.trim()}
             title="Görev ekle"
+            style={{ height: 38 }}
           >
             Ekle
           </button>
@@ -1436,8 +1715,21 @@ export default function App() {
         </div>
 
         {view !== "trash" && view !== "stats" && (
-          <div className="categoryAddRow" style={{ marginTop: 0 }}>
+          <div
+            className="categoryAddRow"
+            style={{
+              marginTop: 0,
+              display: "flex",
+              gap: 12,
+              alignItems: "center",
+              flexWrap: "wrap",
+              width: "100%",
+              position: filtersOpen ? "relative" : undefined,
+              zIndex: filtersOpen ? 28 : undefined,
+            }}
+          >
             <input
+              ref={newCategoryInputRef}
               className="input"
               value={newCategoryName}
               onChange={(e) => setNewCategoryName(e.target.value)}
@@ -1448,169 +1740,269 @@ export default function App() {
                 }
               }}
               placeholder="Kategori ekle…"
+              style={{ height: 38 }}
             />
             <button
-              type="button"
-              className="btnFilter"
-              onClick={() => {
-                if (!newCategoryName.trim()) return;
-                createCategory();
-              }}
-              disabled={!newCategoryName.trim()}
-              title="Kategori ekle"
+                type="button"
+                className="btnPrimary"
+                onClick={() => {
+                  if (!newCategoryName.trim()) return;
+                  createCategory();
+                }}
+                disabled={!newCategoryName.trim()}
+                title="Kategori ekle"
+                style={{ height: 44, paddingInline: 16 }}
             >
               + Ekle
             </button>
-          </div>
-        )}
 
+            <div style={{ marginLeft: "auto", display: "flex", gap: 10, position: "relative", alignItems: "center" }}>
+              <button
+                type="button"
+                className={filtersOpen ? "btnFilter active" : "btnFilter"}
+                onClick={() => {
+                  setFiltersOpen((p) => {
+                    const next = !p;
+                    if (next) {
+                      setFilterSections({
+                        category: false,
+                        status: false,
+                        priority: false,
+                      });
+                    }
+                    return next;
+                  });
+                }}
+                title="Filtreleri aç / kapat"
+                style={filtersOpen ? { background: "rgba(34,197,94,0.18)" } : undefined}
+              >
+                Filtreler
+              </button>
 
+              <button
+                type="button"
+                className={calendarOpen ? "btnFilter active" : "btnFilter"}
+                onClick={() => setCalendarOpen((prev) => !prev)}
+                title="Takvimi Aç / Kapat"
+              >
+                {calendarOpen ? "📅 " : "📅 "}
+              </button>
 
-        {filtersOpen && view === "todos" && (
-          <>
-            {categories.length > 0 && (
-              <div className="categoryListRow" style={{ marginTop: 12, display: "flex", gap: 8, flexWrap: "wrap" }}>
-                <button
-                    type="button"
-                    className={categoryFilter == null ? "categoryBadge active" : "btnFilter"}
-                    onClick={() => setCategoryFilter(null)}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-                    title="Tüm kategoriler"
-                >
-                  Tümü ({Object.values(categoryCountById).reduce((sum, n) => sum + n, 0)})
-                </button>
-                {categories.map((c) => (
-                    <button
-                        key={c.id}
-                        type="button"
-                        className={categoryFilter === c.id ? "categoryBadge active" : "btnFilter"}
-                        onClick={() =>
-                            setCategoryFilter((prev) =>
-                                prev === c.id ? null : c.id
-                            )
-                        }
-                        style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-                        title="Kategoriye göre filtrele"
-                    >
-                      {c.name} <span style={{ opacity: 0.7 }}>({categoryCountById[c.id] || 0})</span>
+              {filtersOpen && view === "todos" && (
+                <>
+                  {/* Dim + blur backdrop behind the popup */}
+                  <div
+                    onClick={() => setFiltersOpen(false)}
+                    style={{
+                      position: "fixed",
+                      inset: 0,
+                      backdropFilter: "blur(2px)",
+                      WebkitBackdropFilter: "blur(2px)",
+                      background: "linear-gradient(rgba(10,14,25,0.35), rgba(10,14,25,0.45))",
+                      zIndex: 40,
+                    }}
+                  />
+                  <div
+                      style={{
+                        position: "fixed",
+                        top: 200,
+                        right: 72,
+                        width: "min(520px, calc(100vw - 80px))",
+                        padding: 14,
+                        borderRadius: 18,
+                        background: "rgba(15, 23, 42, 0.96)",
+                        border: "1px solid rgba(255,255,255,0.10)",
+                        boxShadow: "0 18px 50px rgba(0,0,0,0.30)",
+                        backdropFilter: "blur(12px)",
+                        WebkitBackdropFilter: "blur(12px)",
+                        zIndex: 80,
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 10,
+                      }}
+                  >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>Filtreler</div>
                     <button
                       type="button"
-                      className="btnIcon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteCategory(c.id);
-                      }}
-                      title="Kategoriyi sil"
-                      style={{
-                        width: 26,
-                        height: 26,
-                        borderRadius: 10,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        padding: 0,
-                        fontSize: "16px"
-                      }}
+                      className="btnFilter"
+                      onClick={() => setFiltersOpen(false)}
+                      title="Filtreleri kapat"
+                      style={{ paddingInline: 12, minHeight: 36 }}
                     >
-                      🗑
+                      ❌
                     </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btnFilter"
+                    onClick={() => toggleFilterSection("category")}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600, minHeight: 48 }}
+                    title="Kategori filtrelerini aç / kapat"
+                  >
+                    <span>🏷️ Kategori</span>
+                    <span>{filterSections.category ? "▾" : "▸"}</span>
                   </button>
-                ))}
-              </div>
-            )}
-            <div className="filters" style={{ marginTop: 10 }}>
-              <button
-                type="button"
-                className={filter === "all" ? "btnFilter active" : "btnFilter"}
-                onClick={() => { setError(""); setSelectedDueDates([]); setFilter("all"); }}
-              >
-                Tümü ({statusCount.all || 0})
-              </button>
-              <button
-                type="button"
-                className={filter === "active" ? "btnFilter active" : "btnFilter"}
-                onClick={() => { setError(""); setSelectedDueDates([]); setFilter("active"); }}
-              >
-                Aktif ({statusCount.active || 0})
-              </button>
-              <button
-                type="button"
-                className={filter === "completed" ? "btnFilter active" : "btnFilter"}
-                onClick={() => { setError(""); setSelectedDueDates([]); setFilter("completed"); }}
-              >
-                Tamamlandı ({statusCount.completed || 0})
-              </button>
+
+                  {filterSections.category && categories.length > 0 && (
+                    <div className="categoryListRow" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        type="button"
+                        className={categoryFilter == null ? "categoryBadge active" : "btnFilter"}
+                        onClick={() => setCategoryFilter(null)}
+                        style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                        title="Tüm kategoriler"
+                      >
+                        Tümü ({Object.values(categoryCountById).reduce((sum, n) => sum + n, 0)})
+                      </button>
+                      {categories.map((c) => (
+                        <div
+                          key={c.id}
+                          className={categoryFilter === c.id ? "categoryBadge active" : "btnFilter"}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                          onClick={() => setCategoryFilter((prev) => (prev === c.id ? null : c.id))}
+                          title="Kategoriye göre filtrele"
+                        >
+                          <span>{c.name} <span style={{ opacity: 0.7 }}>({categoryCountById[c.id] || 0})</span></span>
+                          <button
+                            type="button"
+                            className="btnIcon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              deleteCategory(c.id);
+                            }}
+                            title="Kategoriyi sil"
+                            style={{
+                              width: 26,
+                              height: 26,
+                              borderRadius: 10,
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              padding: 0,
+                              fontSize: "16px",
+                            }}
+                          >
+                            🗑
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className="btnFilter"
+                    onClick={() => toggleFilterSection("status")}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600, minHeight: 48 }}
+                    title="Durum filtrelerini aç / kapat"
+                  >
+                    <span>✅ Durum</span>
+                    <span>{filterSections.status ? "▾" : "▸"}</span>
+                  </button>
+
+                  {filterSections.status && (
+                    <div className="filters">
+                      <button
+                        type="button"
+                        className={filter === "all" ? "btnFilter active" : "btnFilter"}
+                        onClick={() => { setError(""); setSelectedDueDates([]); setFilter("all"); }}
+                      >
+                        Tümü ({statusCount.all || 0})
+                      </button>
+                      <button
+                        type="button"
+                        className={filter === "active" ? "btnFilter active" : "btnFilter"}
+                        onClick={() => { setError(""); setSelectedDueDates([]); setFilter("active"); }}
+                      >
+                        Aktif ({statusCount.active || 0})
+                      </button>
+                      <button
+                        type="button"
+                        className={filter === "completed" ? "btnFilter active" : "btnFilter"}
+                        onClick={() => { setError(""); setSelectedDueDates([]); setFilter("completed"); }}
+                      >
+                        Tamamlandı ({statusCount.completed || 0})
+                      </button>
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    className="btnFilter"
+                    onClick={() => toggleFilterSection("priority")}
+                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600, minHeight: 48 }}
+                    title="Öncelik filtrelerini aç / kapat"
+                  >
+                    <span>⚡ Öncelik</span>
+                    <span>{filterSections.priority ? "▾" : "▸"}</span>
+                  </button>
+
+                  {filterSections.priority && (
+                    <div className="filters">
+                      <button
+                        type="button"
+                        className={priorityFilter === "all" ? "btnFilter active" : "btnFilter"}
+                        onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("all"); }}
+                        title="Öncelik filtresi"
+                      >
+                        Tümü ({statusCount.all || 0})
+                      </button>
+                      <button
+                        type="button"
+                        className={priorityFilter === "high" ? "btnFilter active" : "btnFilter"}
+                        onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("high"); }}
+                        title="HIGH"
+                      >
+                        High ({priorityCountByKey.high || 0})
+                      </button>
+                      <button
+                        type="button"
+                        className={priorityFilter === "medium" ? "btnFilter active" : "btnFilter"}
+                        onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("medium"); }}
+                        title="MEDIUM"
+                      >
+                        Medium ({priorityCountByKey.medium || 0})
+                      </button>
+                      <button
+                        type="button"
+                        className={priorityFilter === "low" ? "btnFilter active" : "btnFilter"}
+                        onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("low"); }}
+                        title="LOW"
+                      >
+                        Low ({priorityCountByKey.low || 0})
+                      </button>
+                    </div>
+                  )}
+                  </div>
+                </>
+              )}
             </div>
-            <div className="filters">
-              <button
-                type="button"
-                className={priorityFilter === "all" ? "btnFilter active" : "btnFilter"}
-                onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("all"); }}
-                title="Öncelik filtresi"
-              >
-                Tümü ({statusCount.all || 0})
-              </button>
-              <button
-                type="button"
-                className={priorityFilter === "high" ? "btnFilter active" : "btnFilter"}
-                onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("high"); }}
-                title="HIGH"
-              >
-                High ({priorityCountByKey.high || 0})
-              </button>
-              <button
-                type="button"
-                className={priorityFilter === "medium" ? "btnFilter active" : "btnFilter"}
-                onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("medium"); }}
-                title="MEDIUM"
-              >
-                Medium ({priorityCountByKey.medium || 0})
-              </button>
-              <button
-                type="button"
-                className={priorityFilter === "low" ? "btnFilter active" : "btnFilter"}
-                onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("low"); }}
-                title="LOW"
-              >
-                Low ({priorityCountByKey.low || 0})
-              </button>
-            </div>
-          </>
+          </div>
         )}
 
+
         {view !== "trash" && view !== "stats" && (
-          <div className="searchRow" style={{ marginBottom: 12 }}>
-            <input
-              className="searchInput"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="Notlarda ara..."
-            />
-
-            <button
-              type="button"
-              className={filtersOpen ? "btnFilter active" : "btnFilter"}
-              onClick={() => setFiltersOpen((p) => !p)}
-              title="Filtreleri aç / kapat"
+            <div
+              className="searchRow"
+              style={{
+                marginBottom: 12,
+              }}
             >
-              {filtersOpen ? "Filtreleri Gizle" : "Filtreler"}
-            </button>
+              <input
+                  className="searchInput"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="🔍 Notlarda ara..."
+              />
 
-            <button
-              type="button"
-              className={calendarOpen ? "btnFilter active" : "btnFilter"}
-              onClick={() => setCalendarOpen((prev) => !prev)}
-              title="Takvimi Aç / Kapat"
-            >
-              {calendarOpen ? "📅 Gizle" : "📅"}
-            </button>
-
-            {query.trim() && (
-              <button type="button" className="btnFilter" onClick={() => setQuery("")} title="Aramayı temizle">
-                Temizle
-              </button>
-            )}
-          </div>
+              {query.trim() && (
+                  <button type="button" className="btnFilter" onClick={() => setQuery("")} title="Aramayı temizle">
+                    Temizle
+                  </button>
+              )}
+            </div>
         )}
 
 
@@ -1684,6 +2076,14 @@ export default function App() {
                       (isToday ? " today" : "") +
                       (isSelected ? " selected" : "") +
                       (isPastDueDay ? " overdue" : "")
+                  }
+                  style={
+                    isToday
+                      ? {
+                          border: "1.5px solid rgba(34,197,94,0.7)",
+                          boxShadow: "0 0 0 2px rgba(34,197,94,0.10)",
+                        }
+                      : undefined
                   }
                   onClick={() => {
                     if (!count) return;
@@ -1956,36 +2356,150 @@ export default function App() {
           </div>
         ) : (
         <div className={"list" + (listTransitioning ? " isSwitching" : "")}>
-          {listTodos.length === 0 && !loading ? (
+          {((view === "trash" && trashTodos.length === 0) || (view !== "trash" && listTodos.length === 0)) && !loading ? (
             <div className="hint">
-              {selectedDueDates.length
+              {view === "trash"
+                ? "Çöp kutusu boş."
+                : selectedDueDates.length
                   ? "Seçili günlere atanmış görev yok."
-                : query.trim()
-                ? "Aramana uygun görev bulunamadı."
-                : filter === "all"
-                ? "Henüz görev yok. İlk görevini ekle 👇"
-                : "Bu filtreye uygun görev yok."}
+                  : query.trim()
+                  ? "Aramana uygun görev bulunamadı."
+                  : filter === "all"
+                  ? "Henüz görev yok. İlk görevini ekle. ☝️"
+                  : "Bu filtrelemeye uygun görev yok."}
             </div>
           ) : (
-            <ul className="ul">
-              {(view === "trash" ? trashTodos : listTodos)
-                  .slice()
-                  .sort((a, b) => (b.pinned === true) - (a.pinned === true))
-                  .map((t) => (
+            <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+              {groupedListTodos.map((group) => (
+                <div key={group.key}>
+              {group.title ? (
+                <>
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 12,
+                      marginBottom: 10,
+                      paddingInline: 4,
+                      flexWrap: "wrap",
+                    }}
+                  >
+                    {group.collapsible ? (
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                        {(group.key.startsWith("cat-") || group.key === "pinned") && (
+                          <div
+                            style={{
+                              width: 18,
+                              height: 18,
+                              borderRadius: "50%",
+                              background: getCategoryAccent(group.key),
+                              position: "relative",
+                              cursor: "pointer",
+                              flex: "0 0 auto",
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            title="Kategori rengini seç"
+                          >
+                            <input
+                              type="color"
+                              value={getCategoryAccent(group.key)}
+                              onChange={(e) => {
+                                const color = e.target.value;
+                                setCategoryAccentByKey((prev) => ({ ...prev, [group.key]: color }));
+                              }}
+                              style={{
+                                position: "absolute",
+                                inset: 0,
+                                opacity: 0,
+                                cursor: "pointer",
+                                width: "100%",
+                                height: "100%",
+                                border: "none",
+                                padding: 0,
+                              }}
+                            />
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          className="btnFilter"
+                          onClick={() => toggleCategoryCollapse(group.key)}
+                          title="Kategori grubunu aç / kapat"
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 8,
+                            fontWeight: 700,
+                            paddingInline: 12,
+                            transition: "transform 0.18s ease, background 0.18s ease, box-shadow 0.18s ease",
+                          }}
+                        >
+                          <span
+                            style={{
+                              fontSize: 12,
+                              opacity: 0.78,
+                              transform: collapsedCategoryIds.includes(group.key) ? "rotate(0deg)" : "rotate(90deg)",
+                              transition: "transform 0.18s ease",
+                              display: "inline-block",
+                              width: 10,
+                            }}
+                          >
+                            ▸
+                          </span>
+                          <span>{group.title}</span>
+                          <span style={{ opacity: 0.72 }}>({group.items.length})</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ fontWeight: 700, fontSize: 16, opacity: 0.96 }}>{group.title}</div>
+                    )}
+                    <div style={{ flex: 1, height: 1, background: "rgba(255,255,255,0.10)" }} />
+                  </div>
+                </>
+              ) : null}
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateRows: !group.collapsible || !collapsedCategoryIds.includes(group.key) ? "1fr" : "0fr",
+                  transition: "grid-template-rows 0.22s ease, opacity 0.22s ease",
+                  opacity: !group.collapsible || !collapsedCategoryIds.includes(group.key) ? 1 : 0.72,
+                }}
+              >
+                <div style={{ overflow: "hidden" }}>
+                  {!group.collapsible || !collapsedCategoryIds.includes(group.key) ? (
+                    <ul className="ul">
+                    {group.items.map((t) => (
   <li
     key={t.id}
     className={
         "li" +
-        (selectedTodoIds.includes(t.id) ? " selected" : "") +
+        ((view === "trash" ? selectedTrashIds.includes(t.id) : selectedTodoIds.includes(t.id)) ? " selected" : "") +
         (draggingId === t.id ? " dragging" : "") +
         (dragOverId === t.id ? " dragOver" : "")
+    }
+    style={
+      draggingId === t.id
+        ? {
+            transform: "scale(1.02)",
+            boxShadow: "0 12px 28px rgba(0,0,0,0.28)",
+            opacity: 0.72,
+            zIndex: 10,
+          }
+        : dragOverId === t.id
+        ? undefined
+        : recentlyAddedId === t.id
+        ? {
+            boxShadow: "0 0 0 2px rgba(34,197,94,0.35)",
+            background: "rgba(34,197,94,0.06)",
+          }
+        : undefined
     }
     draggable={view !== "trash"}
     onDragStart={() => {
       if (view === "trash") return;
       setDraggingId(t.id);
       setDragOverId(null);
-      showToast("Sürükle-Bırak: Sıralıyor…");
     }}
     onDragEnd={() => {
       if (view === "trash") return;
@@ -2014,26 +2528,32 @@ export default function App() {
     }}
   >
     <div className="left">
-      {view !== "trash" && (
-          <button
-              type="button"
-              className={
-                  (selectedTodoIds.includes(t.id) ? "btnFilter active" : "btnFilter") +
-                  " selectTodoBtn" +
-                  (selectedTodoIds.includes(t.id) ? " isSelected" : "")
-              }
-              style={{ width: 28, height: 28, padding: 0, fontSize: 14, borderRadius: 10 }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
+      <button
+        type="button"
+        className={
+          ((view === "trash" ? selectedTrashIds.includes(t.id) : selectedTodoIds.includes(t.id)) ? "btnFilter active" : "btnFilter") +
+          " selectTodoBtn" +
+          ((view === "trash" ? selectedTrashIds.includes(t.id) : selectedTodoIds.includes(t.id)) ? " isSelected" : "")
+        }
+        style={{ width: 28, height: 28, padding: 0, fontSize: 14, borderRadius: 10 }}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (view === "trash") {
+            toggleSelectedTrash(t.id);
+          } else {
             toggleSelectedTodo(t.id);
-          }}
-          title={selectedTodoIds.includes(t.id) ? "Seçimi kaldır" : "Görevi seç"}
-        >
-          {selectedTodoIds.includes(t.id) ? "✓" : "○"}
-        </button>
-      )}
+          }
+        }}
+        title={
+          view === "trash"
+            ? (selectedTrashIds.includes(t.id) ? "Seçimi kaldır" : "Görevi seç")
+            : (selectedTodoIds.includes(t.id) ? "Seçimi kaldır" : "Görevi seç")
+        }
+      >
+        {(view === "trash" ? selectedTrashIds.includes(t.id) : selectedTodoIds.includes(t.id)) ? "✓" : "○"}
+      </button>
 
       {editingId === t.id && view !== "trash" ? (
         <div
@@ -2233,10 +2753,7 @@ export default function App() {
     {view === "trash" ? (
       <div style={{ display: "flex", gap: 8 }}>
         <button type="button" className="btnFilter" onClick={() => restoreTodo(t.id)} title="Geri yükle">
-          Geri yükle
-        </button>
-        <button type="button" className="btnDanger" onClick={() => hardDeleteTodo(t.id)} title="Kalıcı sil">
-          Kalıcı Sil
+          Geri Yükle
         </button>
       </div>
     ) : (
@@ -2303,8 +2820,17 @@ export default function App() {
       </div>
     )}
   </li>
-))}
-            </ul>
+                    ))}
+                    </ul>
+                  ) : (
+                    <div className="hint" style={{ marginTop: 2, marginLeft: 6, paddingBottom: 4 }}>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
+            </div>
           )}
         </div>
         )}
