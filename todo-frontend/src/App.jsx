@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Component, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import logo from "./assets/logo.png";
+import DOMPurify from "dompurify";
 
 const RAW_API_BASE = (import.meta?.env?.VITE_API_BASE ?? "").trim();
 // If VITE_API_BASE is not set (or empty), default to Spring Boot (8080)
@@ -136,6 +137,35 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [listTransitioning, setListTransitioning] = useState(false);
   const lastReorderToastAtRef = useRef(0);
+
+  function plainTextFromHtml(html) {
+    return DOMPurify.sanitize(html || "")
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+  }
+
+  class QuillErrorBoundary extends Component {
+    constructor(props) {
+      super(props);
+      this.state = { hasError: false };
+    }
+
+    static getDerivedStateFromError() {
+      return { hasError: true };
+    }
+
+    componentDidCatch(error) {
+      console.error("ReactQuill render error:", error);
+    }
+
+    render() {
+      if (this.state.hasError) {
+        return this.props.fallback ?? null;
+      }
+      return this.props.children;
+    }
+  }
 
   function openNativeDatePicker(e) {
     const el = e?.currentTarget;
@@ -1515,26 +1545,53 @@ export default function App() {
             }}
           >
             <button
-                type="button"
-                className={view === "todos" ? "btnFilter active" : "btnFilter"}
-                onClick={() => switchMainView("todos")}
-                title="Aktif görevler"
+              type="button"
+              onClick={() => switchMainView("todos")}
+              title="Aktif görevler"
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom: view === "todos" ? "2px solid #22c55e" : "2px solid transparent",
+                color: view === "todos" ? "#ffffff" : "#cbd5e1",
+                padding: "10px 14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.18s ease",
+              }}
             >
               Tüm Görevler
             </button>
             <button
-                type="button"
-                className={view === "trash" ? "btnFilter active" : "btnFilter"}
-                onClick={() => switchMainView(view === "trash" ? "todos" : "trash")}
-                title="Çöp kutusu"
+              type="button"
+              onClick={() => switchMainView(view === "trash" ? "todos" : "trash")}
+              title="Çöp kutusu"
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom: view === "trash" ? "2px solid #22c55e" : "2px solid transparent",
+                color: view === "trash" ? "#ffffff" : "#cbd5e1",
+                padding: "10px 14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.18s ease",
+              }}
             >
               Çöp Kutusu
             </button>
             <button
-                type="button"
-                className={view === "stats" ? "btnFilter active" : "btnFilter"}
-                onClick={() => switchMainView("stats")}
-                title="İstatistikler"
+              type="button"
+              onClick={() => switchMainView("stats")}
+              title="İstatistikler"
+              style={{
+                background: "transparent",
+                border: "none",
+                borderBottom: view === "stats" ? "2px solid #22c55e" : "2px solid transparent",
+                color: view === "stats" ? "#ffffff" : "#cbd5e1",
+                padding: "10px 14px",
+                fontWeight: 600,
+                cursor: "pointer",
+                transition: "all 0.18s ease",
+              }}
             >
               İstatistikler
             </button>
@@ -1621,9 +1678,31 @@ export default function App() {
               type="button"
               className="btnDanger"
               onClick={emptyTrash}
-              title="Çöp kutusunu tamamen boşalt"
+              title="Çöp kutusunu boşalt"
+              style={{
+                background: "transparent",
+                border: "1px solid rgba(239,68,68,0.6)",
+                color: "#f87171",
+                padding: "8px 14px",
+                borderRadius: 999,
+                fontWeight: 600,
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 6,
+                transition: "all 0.18s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = "#ef4444";
+                e.currentTarget.style.color = "#fff";
+                e.currentTarget.style.boxShadow = "0 6px 14px rgba(239,68,68,0.35)";
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = "transparent";
+                e.currentTarget.style.color = "#f87171";
+                e.currentTarget.style.boxShadow = "none";
+              }}
             >
-              Çöp Kutusunu Boşalt
+              🗑 Boşalt
             </button>
           </div>
         )}
@@ -1759,7 +1838,6 @@ export default function App() {
             <div style={{ marginLeft: "auto", display: "flex", gap: 10, position: "relative", alignItems: "center" }}>
               <button
                 type="button"
-                className={filtersOpen ? "btnFilter active" : "btnFilter"}
                 onClick={() => {
                   setFiltersOpen((p) => {
                     const next = !p;
@@ -1774,18 +1852,37 @@ export default function App() {
                   });
                 }}
                 title="Filtreleri aç / kapat"
-                style={filtersOpen ? { background: "rgba(34,197,94,0.18)" } : undefined}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: filtersOpen ? "2px solid #22c55e" : "2px solid transparent",
+                  color: filtersOpen ? "#ffffff" : "#cbd5e1",
+                  padding: "10px 14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "all 0.18s ease",
+                }}
               >
                 Filtreler
               </button>
 
               <button
                 type="button"
-                className={calendarOpen ? "btnFilter active" : "btnFilter"}
                 onClick={() => setCalendarOpen((prev) => !prev)}
                 title="Takvimi Aç / Kapat"
+                aria-label="Takvim"
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  borderBottom: calendarOpen ? "2px solid #22c55e" : "2px solid transparent",
+                  color: calendarOpen ? "#ffffff" : "#cbd5e1",
+                  padding: "10px 14px",
+                  fontWeight: 600,
+                  cursor: "pointer",
+                  transition: "all 0.18s ease",
+                }}
               >
-                {calendarOpen ? "📅 " : "📅 "}
+                📅
               </button>
 
               {filtersOpen && view === "todos" && (
@@ -2363,7 +2460,10 @@ export default function App() {
                 : selectedDueDates.length
                   ? "Seçili günlere atanmış görev yok."
                   : query.trim()
-                  ? "Aramana uygun görev bulunamadı."
+                  ? " Bu aramaya uygun görev bulunamadı... \n" +
+                          "Başka bir şey aramayı deneyin."
+                  : categoryFilter
+                  ? ` ${categoryNameById.get(Number(categoryFilter)) || "Bu"} kategorisinde görev yok.\nİlk görevi eklemek için yukarıdaki formu kullan.`
                   : filter === "all"
                   ? "Henüz görev yok. İlk görevini ekle. ☝️"
                   : "Bu filtrelemeye uygun görev yok."}
@@ -2605,18 +2705,19 @@ export default function App() {
             {t.title}
           </span>
 
-          {t.description && t.description.trim() !== "" && (
-            <div className="todoDescWrap" style={{ minWidth: 0 }}>
+          {plainTextFromHtml(t.description).trim() !== "" && (
+            <>
               <div
                 className={"todoDesc" + (expandedDescId === t.id ? " expanded" : "")}
-                style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", opacity: 0.78, minWidth: 0 }}
-              >
-                {t.description}
-              </div>
+                style={{ wordBreak: "break-word", opacity: 0.78, minWidth: 0 }}
+                dangerouslySetInnerHTML={{
+                  __html: DOMPurify.sanitize(t.description || ""),
+                }}
+              />
 
               {(() => {
-                const desc = (t.description || "").toString();
-                const showToggle = desc.length > 80 || desc.split("\n").length > 2;
+                const desc = plainTextFromHtml(t.description || "");
+                const showToggle = desc.length > 80;
 
                 if (!showToggle) return null;
 
@@ -2637,17 +2738,19 @@ export default function App() {
                   </button>
                 );
               })()}
-            </div>
+            </>
           )}
           {view !== "trash" && descOpenId === t.id && (
             <div className="descEditor">
-              <textarea
-                className="descTextarea"
-                value={descDraft}
-                onChange={(e) => setDescDraft(e.target.value)}
-                placeholder="Açıklama yaz…"
-                rows={2}
-              />
+              <div className="descRichEditor">
+  <textarea
+      className="descTextarea"
+      value={typeof descDraft === "string" ? descDraft : ""}
+      onChange={(e) => setDescDraft(e.target.value)}
+      placeholder="Açıklama yaz…"
+      rows={5}
+  />
+              </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                 <select
                   className="select"
@@ -2727,24 +2830,82 @@ export default function App() {
                 </span>
               ) : null;
             })()}
-            {t.dueDate && (
+            {t.dueDate ? (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  opacity: 0.9,
+                }}
+                title="Son tarih"
+              >
                 <span
-                    className={
-                      t.dueDate < localYmd(new Date())
-                          ? "dueBadge overdue"
-                          : "dueBadge"
-                    }
-                    title="Son tarih"
-                >
-                    {t.dueDate}
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: "#60a5fa",
+                    display: "inline-block",
+                    flex: "0 0 auto",
+                  }}
+                />
+                <span>{t.dueDate}</span>
+              </span>
+            ) : null}
 
-                  {t.dueDate < localYmd(new Date())
-                      ? " • SÜRESİ DOLMUŞ"
-                      : t.dueDate === localYmd(new Date())
-                          ? " • GÖREVİN SON GÜNÜ"
-                          : ""}
-                </span>
-            )}
+            {t.dueDate && t.dueDate < localYmd(new Date()) && !t.completed ? (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  color: "#f87171",
+                  fontWeight: 600,
+                }}
+                title="Geciken görev"
+              >
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: "#ef4444",
+                    display: "inline-block",
+                    flex: "0 0 auto",
+                  }}
+                />
+                <span>Süresi Doldu</span>
+              </span>
+            ) : null}
+
+            {t.dueDate && t.dueDate === localYmd(new Date()) && !t.completed ? (
+              <span
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                  fontSize: 13,
+                  color: "#fbbf24",
+                  fontWeight: 600,
+                }}
+                title="Bugün son gün"
+              >
+                <span
+                  style={{
+                    width: 7,
+                    height: 7,
+                    borderRadius: "50%",
+                    background: "#fbbf24",
+                    display: "inline-block",
+                    flex: "0 0 auto",
+                  }}
+                />
+                <span>Bugün Son Gün</span>
+              </span>
+            ) : null}
           </div>
         </div>
       )}

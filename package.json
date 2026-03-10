@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "dompurify": "^3.3.2",
+    "react-quill": "^2.0.0"
+  }
+}

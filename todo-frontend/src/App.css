@@ -867,6 +867,36 @@ button[title="LOW"].btnFilter.active {
   max-width:320px;
 }
 
+.descRichEditor .ql-toolbar.ql-snow {
+  border-radius: 12px 12px 0 0;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.04);
+}
+
+.descRichEditor .ql-container.ql-snow {
+  border-radius: 0 0 12px 12px;
+  border: 1px solid rgba(255,255,255,0.10);
+  background: rgba(255,255,255,0.03);
+  min-height: 140px;
+}
+
+.descRichEditor .ql-editor {
+  min-height: 110px;
+  color: #fff;
+}
+
+.descRichEditor .ql-snow .ql-stroke {
+  stroke: #ddd;
+}
+
+.descRichEditor .ql-snow .ql-fill {
+  fill: #ddd;
+}
+
+.descRichEditor .ql-snow .ql-picker {
+  color: #ddd;
+}
+
 @media (max-width: 520px) {
   .addForm {
     flex-direction: column;
