@@ -108,6 +108,7 @@ export default function App() {
   const [selectedDueDates, setSelectedDueDates] = useState([]);
   const [calendarOpen, setCalendarOpen] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [categoryAddOpen, setCategoryAddOpen] = useState(false);
   const [filterSections, setFilterSections] = useState({
     category: true,
     status: false,
@@ -129,7 +130,16 @@ export default function App() {
   const [descPriority, setDescPriority] = useState("MEDIUM");
   const [expandedDescId, setExpandedDescId] = useState(null);
   const [collapsedCategoryIds, setCollapsedCategoryIds] = useState([]);
-  const [categoryAccentByKey, setCategoryAccentByKey] = useState({});
+  const [categoryAccentByKey, setCategoryAccentByKey] = useState(() => {
+    try {
+      const raw = localStorage.getItem("mytodo-category-accents");
+      if (!raw) return {};
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  });
 
   const [newPriority, setNewPriority] = useState("MEDIUM"); // LOW | MEDIUM | HIGH
   const newTodoInputRef = useRef(null);
@@ -186,6 +196,49 @@ export default function App() {
     window.setTimeout(() => {
       setToast((prev) => prev.filter((t) => t.id !== id));
     }, 8000);
+  }
+
+  function renderEmptyState({ icon, title, description, accent = "#60a5fa" }) {
+    return (
+      <div
+        style={{
+          marginTop: 18,
+          marginBottom: 8,
+          padding: "22px 20px",
+          borderRadius: 22,
+          border: "1px solid rgba(255,255,255,0.08)",
+          background: "linear-gradient(180deg, rgba(255,255,255,0.035), rgba(255,255,255,0.02))",
+          boxShadow: "0 14px 34px rgba(0,0,0,0.14)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          textAlign: "center",
+          gap: 10,
+        }}
+      >
+        <div
+          style={{
+            width: 54,
+            height: 54,
+            borderRadius: 18,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: `${accent}18`,
+            border: `1px solid ${accent}2e`,
+            color: accent,
+            boxShadow: `0 10px 24px ${accent}18`,
+          }}
+        >
+          {icon}
+        </div>
+        <div style={{ fontWeight: 800, fontSize: 18, color: "#f8fafc" }}>{title}</div>
+        <div style={{ color: "#94a3b8", fontSize: 14, maxWidth: 520, lineHeight: 1.55 }}>
+          {description}
+        </div>
+      </div>
+    );
   }
 
   function switchMainView(nextView) {
@@ -456,12 +509,14 @@ export default function App() {
       });
 
       if (!res.ok) {
-        // If login credentials are wrong
         if (authMode === "login" && res.status === 401) {
-          throw new Error("Hatalı email veya şifre girdiniz.");
+          throw new Error("Hatalı e-mail veya şifre girdiniz. Lütfen tekrar deneyin.");
         }
 
-        // register on existing user may return 409 or other validation errors
+        if (authMode === "register" && res.status === 409) {
+          throw new Error("Bu e-mail adresiyle daha önce kayıt olunmuş. Lütfen başka bir mail adresi ile kaydolunuz.");
+        }
+
         const msg = await readError(res);
         throw new Error(msg);
       }
@@ -531,6 +586,7 @@ export default function App() {
       if (!created || typeof created !== "object") {
         await loadCategories(token);
         setNewCategoryName("");
+        setCategoryAddOpen(false);
         window.requestAnimationFrame(() => newCategoryInputRef.current?.focus());
         return;
       }
@@ -544,6 +600,7 @@ export default function App() {
       // Yeni eklenen kategoriyi seç
       setNewCategoryId("");
       setNewCategoryName("");
+      setCategoryAddOpen(false);
       showToast("Kategori eklendi. ✅");
       window.requestAnimationFrame(() => newCategoryInputRef.current?.focus());
     } catch (err) {
@@ -729,6 +786,19 @@ export default function App() {
     if (view === "trash") loadTrash(token);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token, view]);
+
+  useEffect(() => {
+    setSelectedTodoIds([]);
+    setSelectedTrashIds([]);
+  }, [view]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem("mytodo-category-accents", JSON.stringify(categoryAccentByKey));
+    } catch {
+      // storage hatasını sessizce geç
+    }
+  }, [categoryAccentByKey]);
 
   // 15 dk = 15 * 60 * 1000
   const IDLE_MS = 15 * 60 * 1000;
@@ -997,7 +1067,35 @@ export default function App() {
     const groups = [];
 
     if (pinned.length > 0) {
-      groups.push({ key: "pinned", title: "📌 ", items: pinned, collapsible: true });
+      groups.push({
+        key: "pinned",
+        title: (
+          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+              xmlns="http://www.w3.org/2000/svg"
+            >
+              <path
+                d="M14 3L21 10L17 11L13 15L9 11L13 7L14 3Z"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinejoin="round"
+              />
+              <path
+                d="M9 15L4 20"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+              />
+            </svg>
+          </span>
+        ),
+        items: pinned,
+        collapsible: true
+      });
     }
 
     const byCategory = new Map();
@@ -1093,40 +1191,17 @@ export default function App() {
   const generalChartData = [
     { label: "Tamamlanan", value: statsOverview.completed, color: "#22c55e" },
     { label: "Aktif", value: statsOverview.active, color: "#60a5fa" },
-    { label: "Süresi dolmuş", value: statsOverview.overdue, color: "#ef4444" },
+    { label: "Süresi Dolmuş", value: statsOverview.overdue, color: "#ef4444" },
     { label: "Sabitlenen", value: statsOverview.pinned, color: "#f59e0b" },
   ];
 
   const dueChartData = [
     { label: "Bugün", value: statsByDue.today, color: "#facc15" },
     { label: "Gelecek", value: statsByDue.future, color: "#22c55e" },
-    { label: "Süresi dolmuş", value: statsByDue.overdue, color: "#ef4444" },
-    { label: "Tarih belirlenmemiş", value: statsByDue.noDate, color: "#94a3b8" },
+    { label: "Süresi Dolmuş", value: statsByDue.overdue, color: "#ef4444" },
+    { label: "Tarih Belirlenmemiş", value: statsByDue.noDate, color: "#94a3b8" },
   ];
 
-  function donutSegments(items) {
-    const total = items.reduce((sum, item) => sum + item.value, 0);
-    if (!total) return [];
-
-    let acc = 0;
-    return items.map((item) => {
-      const start = (acc / total) * 100;
-      acc += item.value;
-      const end = (acc / total) * 100;
-      return { ...item, start, end };
-    });
-  }
-
-  function donutBackground(items) {
-    const segments = donutSegments(items);
-    if (!segments.length) {
-      return "conic-gradient(rgba(255,255,255,0.08) 0 100%)";
-    }
-
-    return `conic-gradient(${segments
-        .map((item) => `${item.color} ${item.start}% ${item.end}%`)
-        .join(", ")})`;
-  }
 
   async function addTodo(e) {
     e.preventDefault();
@@ -1219,7 +1294,7 @@ export default function App() {
         await loadTodos(token);
       }
       setError("");
-      showToast("Durum güncellendi. ✅");
+      showToast("Aktiflik durumu güncellendi. ✅");
     } catch (err) {
       setError(err.message);
     }
@@ -1416,45 +1491,115 @@ export default function App() {
             </div>
           </header>
 
-          <div className="filters">
+          <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <button
               type="button"
-              className={authMode === "login" ? "btnFilter active" : "btnFilter"}
               onClick={() => {
                 setAuthMode("login");
                 setAuthEmail("");
                 setAuthPassword("");
                 setError("");
               }}
+              style={{
+                height: 42,
+                paddingInline: 22,
+                borderRadius: 999,
+                border: authMode === "login" ? "1px solid rgba(34,197,94,0.30)" : "1px solid rgba(255,255,255,0.12)",
+                background: authMode === "login" ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.04)",
+                color: authMode === "login" ? "#dcfce7" : "#e5e7eb",
+                fontWeight: 700,
+                cursor: "pointer",
+                transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease, box-shadow 0.18s ease",
+                boxShadow: authMode === "login" ? "inset 0 1px 0 rgba(255,255,255,0.04)" : "none",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-1px)";
+                if (authMode === "login") {
+                  e.currentTarget.style.background = "rgba(34,197,94,0.16)";
+                  e.currentTarget.style.borderColor = "rgba(34,197,94,0.42)";
+                } else {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.07)";
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)";
+                  e.currentTarget.style.color = "#ffffff";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                if (authMode === "login") {
+                  e.currentTarget.style.background = "rgba(34,197,94,0.12)";
+                  e.currentTarget.style.borderColor = "rgba(34,197,94,0.30)";
+                  e.currentTarget.style.color = "#dcfce7";
+                } else {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                  e.currentTarget.style.color = "#e5e7eb";
+                }
+              }}
             >
               Login
             </button>
             <button
               type="button"
-              className={authMode === "register" ? "btnFilter active" : "btnFilter"}
               onClick={() => {
                 setAuthMode("register");
                 setAuthEmail("");
                 setAuthPassword("");
                 setError("");
               }}
+              style={{
+                height: 42,
+                paddingInline: 22,
+                borderRadius: 999,
+                border: authMode === "register" ? "1px solid rgba(96,165,250,0.28)" : "1px solid rgba(255,255,255,0.12)",
+                background: authMode === "register" ? "rgba(96,165,250,0.10)" : "rgba(255,255,255,0.04)",
+                color: authMode === "register" ? "#dbeafe" : "#e5e7eb",
+                fontWeight: 700,
+                cursor: "pointer",
+                transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease, box-shadow 0.18s ease",
+                boxShadow: authMode === "register" ? "inset 0 1px 0 rgba(255,255,255,0.04)" : "none",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = "translateY(-1px)";
+                if (authMode === "register") {
+                  e.currentTarget.style.background = "rgba(96,165,250,0.14)";
+                  e.currentTarget.style.borderColor = "rgba(96,165,250,0.38)";
+                } else {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.07)";
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)";
+                  e.currentTarget.style.color = "#ffffff";
+                }
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = "translateY(0)";
+                if (authMode === "register") {
+                  e.currentTarget.style.background = "rgba(96,165,250,0.10)";
+                  e.currentTarget.style.borderColor = "rgba(96,165,250,0.28)";
+                  e.currentTarget.style.color = "#dbeafe";
+                } else {
+                  e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                  e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                  e.currentTarget.style.color = "#e5e7eb";
+                }
+              }}
             >
               Register
             </button>
           </div>
 
-          {authMode === "register" && (
-            <div style={{ marginTop: 10, display: "flex", gap: 16, flexWrap: "wrap" }}>
-              {authEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authEmail) && (
-                <div className="hint">Geçerli bir email adresi giriniz.</div>
-              )}
-              {authPassword && authPassword.length < 6 && (
-                <div className="hint">Şifre en az 6 karakter olmalı.</div>
-              )}
-            </div>
+          {authMode === "register" &&
+            ((authEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authEmail)) ||
+              (authPassword && authPassword.length < 6)) && (
+              <div style={{ marginTop: 10, display: "flex", gap: 16, flexWrap: "wrap" }}>
+                {authEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(authEmail) && (
+                  <div className="hint">Geçerli bir e-mail adresi giriniz.</div>
+                )}
+                {authPassword && authPassword.length < 6 && (
+                  <div className="hint">Şifre en az 6 karakter olmalı.</div>
+                )}
+              </div>
           )}
 
-          <form onSubmit={submitAuth} className="addForm" style={{ marginTop: 0 }}>
+          <form onSubmit={submitAuth} className="addForm" style={{ marginTop: 12, display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
             <input
               className="input"
               value={authEmail}
@@ -1547,7 +1692,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => switchMainView("todos")}
-              title="Aktif görevler"
+              title="Aktif Görevler"
               style={{
                 background: "transparent",
                 border: "none",
@@ -1564,7 +1709,7 @@ export default function App() {
             <button
               type="button"
               onClick={() => switchMainView(view === "trash" ? "todos" : "trash")}
-              title="Çöp kutusu"
+              title="Çöp Kutusu"
               style={{
                 background: "transparent",
                 border: "none",
@@ -1602,7 +1747,7 @@ export default function App() {
               type="button"
               className="btnFilter"
               onClick={logout}
-              title="Çıkış"
+              title="Çıkış Yap"
               aria-label="Çıkış"
               style={{
                 width: 40,
@@ -1646,39 +1791,183 @@ export default function App() {
           </div>
         </header>
 
-        {view !== "trash" && view !== "stats" && selectedTodoIds.length > 0 && (
-          <div className="filters" style={{ marginTop: 10, marginBottom: 10 }}>
-            <span className="pill">
-              Seçili görev: <b>{selectedTodoIds.length}</b>
-            </span>
-            <button
-              type="button"
-              className="btnFilter"
-              onClick={clearSelectedTodos}
-              title="Seçimi temizle"
-            >
-              Seçimi Temizle
-            </button>
-            <button
-              type="button"
-              className="btnDanger"
-              onClick={bulkDeleteSelectedTodos}
-              title="Seçili görevleri sil"
-            >
-              {selectedTodoIds.length === 1 ? "Sil" : "Toplu Sil"}
-            </button>
-          </div>
-        )}
+          {view !== "trash" && view !== "stats" && selectedTodoIds.length > 0 && (
+              <div
+                  style={{
+                    marginTop: 12,
+                    marginBottom: 10,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 10,
+                    flexWrap: "wrap",
+                    padding: "10px 12px",
+                    borderRadius: 18,
+                    background: "rgba(255,255,255,0.035)",
+                    border: "1px solid rgba(255,255,255,0.08)",
+                    boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+                  }}
+              >
+                <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      padding: "8px 12px",
+                      borderRadius: 999,
+                      background: "rgba(255,255,255,0.04)",
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      fontWeight: 600,
+                      color: "#e5e7eb",
+                    }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <rect x="5" y="7" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+                    <path d="M9 5H17C18.1046 5 19 5.89543 19 7V15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </svg>
+                  <span>Seçili görev</span>
+                  <span
+                      style={{
+                        minWidth: 24,
+                        height: 24,
+                        paddingInline: 8,
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: 999,
+                        background: "rgba(96,165,250,0.14)",
+                        color: "#dbeafe",
+                        fontWeight: 700,
+                        fontSize: 13,
+                        lineHeight: 1,
+                      }}
+                  >
+        {selectedTodoIds.length}
+      </span>
+                </div>
+
+                <button
+                    type="button"
+                    onClick={clearSelectedTodos}
+                    title="Seçimi temizle"
+                    style={{
+                      height: 40,
+                      paddingInline: 14,
+                      borderRadius: 14,
+                      border: "1px solid rgba(255,255,255,0.12)",
+                      background: "rgba(255,255,255,0.03)",
+                      color: "#e5e7eb",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(255,255,255,0.07)";
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)";
+                      e.currentTarget.style.color = "#ffffff";
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                      e.currentTarget.style.color = "#e5e7eb";
+                      e.currentTarget.style.transform = "translateY(0)";
+                    }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M6 6L18 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                    <path d="M18 6L6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                  </svg>
+                  <span>Seçimi Temizle</span>
+                </button>
+
+                <button
+                    type="button"
+                    onClick={bulkDeleteSelectedTodos}
+                    title="Seçili görevleri sil"
+                    style={{
+                      height: 40,
+                      paddingInline: 14,
+                      borderRadius: 14,
+                      border: "1px solid rgba(239,68,68,0.40)",
+                      background: "rgba(239,68,68,0.08)",
+                      color: "#fca5a5",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease, box-shadow 0.18s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(239,68,68,0.16)";
+                      e.currentTarget.style.borderColor = "rgba(239,68,68,0.58)";
+                      e.currentTarget.style.color = "#fecaca";
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                      e.currentTarget.style.boxShadow = "0 8px 18px rgba(239,68,68,0.18)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "rgba(239,68,68,0.08)";
+                      e.currentTarget.style.borderColor = "rgba(239,68,68,0.40)";
+                      e.currentTarget.style.color = "#fca5a5";
+                      e.currentTarget.style.transform = "translateY(0)";
+                      e.currentTarget.style.boxShadow = "none";
+                    }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                    <path d="M4 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                    <path d="M9 7V5C9 4.44772 9.44772 4 10 4H14C14.5523 4 15 4.44772 15 5V7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                    <path d="M6 7L7 19C7.05236 19.5523 7.44772 20 8 20H16C16.5523 20 16.9476 19.5523 17 19L18 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <span>{selectedTodoIds.length === 1 ? "Sil" : "Toplu Sil"}</span>
+                </button>
+              </div>
+          )}
+
         {view === "trash" && trashTodos.length > 0 && (
           <div className="filters" style={{ marginTop: 10, marginBottom: 10 }}>
-            <span className="pill">
-              Çöp kutusunda toplam: <b>{trashTodos.length}</b>
-            </span>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 10,
+                padding: "8px 14px",
+                borderRadius: 999,
+                background: "rgba(255,255,255,0.04)",
+                border: "1px solid rgba(255,255,255,0.10)",
+                fontWeight: 600,
+              }}
+            >
+              <span style={{ opacity: 0.85, display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                  <path d="M9 7V5C9 4.44772 9.44772 4 10 4H14C14.5523 4 15 4.44772 15 5V7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                  <path d="M6 7L7 19C7.05236 19.5523 7.44772 20 8 20H16C16.5523 20 16.9476 19.5523 17 19L18 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span>Çöp Kutusu</span>
+              </span>
+              <span
+                style={{
+                  padding: "2px 10px",
+                  borderRadius: 999,
+                  background: "rgba(255,255,255,0.10)",
+                  fontWeight: 700,
+                  fontSize: 13,
+                  lineHeight: "20px",
+                  minWidth: 28,
+                  textAlign: "center",
+                }}
+              >
+                {trashTodos.length}
+              </span>
+            </div>
             <button
               type="button"
               className="btnDanger"
               onClick={emptyTrash}
-              title="Çöp kutusunu boşalt"
+              title="Çöp Kutusunu Boşalt"
               style={{
                 background: "transparent",
                 border: "1px solid rgba(239,68,68,0.6)",
@@ -1702,33 +1991,151 @@ export default function App() {
                 e.currentTarget.style.boxShadow = "none";
               }}
             >
-              🗑 Boşalt
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M4 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                  <path d="M9 7V5C9 4.44772 9.44772 4 10 4H14C14.5523 4 15 4.44772 15 5V7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                  <path d="M6 7L7 19C7.05236 19.5523 7.44772 20 8 20H16C16.5523 20 16.9476 19.5523 17 19L18 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                </svg>
+                <span>Boşalt</span>
+              </span>
             </button>
           </div>
         )}
 {view === "trash" && selectedTrashIds.length > 0 && (
-  <div className="filters" style={{ marginTop: 12, marginBottom: 10 }}>
-            <span className="pill">
-              Seçili görev: <b>{selectedTrashIds.length}</b>
-            </span>
-            <button
-              type="button"
-              className="btnFilter"
-              onClick={clearSelectedTrash}
-              title="Seçimi temizle"
-            >
-              Seçimi Temizle
-            </button>
-            <button
-              type="button"
-              className="btnDanger"
-              onClick={bulkHardDeleteSelectedTrash}
-              title="Seçili görevleri kalıcı sil"
-            >
-              {selectedTrashIds.length === 1 ? "Sil" : "Toplu Sil"}
-            </button>
-          </div>
-        )}
+  <div
+    style={{
+      marginTop: 12,
+      marginBottom: 10,
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      flexWrap: "wrap",
+      padding: "10px 12px",
+      borderRadius: 18,
+      background: "rgba(255,255,255,0.035)",
+      border: "1px solid rgba(255,255,255,0.08)",
+      boxShadow: "0 8px 24px rgba(0,0,0,0.12)",
+    }}
+  >
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        padding: "8px 12px",
+        borderRadius: 999,
+        background: "rgba(255,255,255,0.04)",
+        border: "1px solid rgba(255,255,255,0.10)",
+        fontWeight: 600,
+        color: "#e5e7eb",
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <rect x="5" y="7" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+        <path d="M9 5H17C18.1046 5 19 5.89543 19 7V15" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+      </svg>
+      <span>Seçili görev</span>
+      <span
+        style={{
+          minWidth: 24,
+          height: 24,
+          paddingInline: 8,
+          display: "inline-flex",
+          alignItems: "center",
+          justifyContent: "center",
+          borderRadius: 999,
+          background: "rgba(96,165,250,0.14)",
+          color: "#dbeafe",
+          fontWeight: 700,
+          fontSize: 13,
+          lineHeight: 1,
+        }}
+      >
+        {selectedTrashIds.length}
+      </span>
+    </div>
+
+    <button
+      type="button"
+      onClick={clearSelectedTrash}
+      title="Seçimi temizle"
+      style={{
+        height: 40,
+        paddingInline: 14,
+        borderRadius: 14,
+        border: "1px solid rgba(255,255,255,0.12)",
+        background: "rgba(255,255,255,0.03)",
+        color: "#e5e7eb",
+        fontWeight: 600,
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "rgba(255,255,255,0.07)";
+        e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)";
+        e.currentTarget.style.color = "#ffffff";
+        e.currentTarget.style.transform = "translateY(-1px)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+        e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+        e.currentTarget.style.color = "#e5e7eb";
+        e.currentTarget.style.transform = "translateY(0)";
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M6 6L18 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+        <path d="M18 6L6 18" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+      </svg>
+      <span>Seçimi Temizle</span>
+    </button>
+
+    <button
+      type="button"
+      onClick={bulkHardDeleteSelectedTrash}
+      title="Seçili görevleri kalıcı sil"
+      style={{
+        height: 40,
+        paddingInline: 14,
+        borderRadius: 14,
+        border: "1px solid rgba(239,68,68,0.40)",
+        background: "rgba(239,68,68,0.08)",
+        color: "#fca5a5",
+        fontWeight: 700,
+        cursor: "pointer",
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 8,
+        transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease, box-shadow 0.18s ease",
+      }}
+      onMouseEnter={(e) => {
+        e.currentTarget.style.background = "rgba(239,68,68,0.16)";
+        e.currentTarget.style.borderColor = "rgba(239,68,68,0.58)";
+        e.currentTarget.style.color = "#fecaca";
+        e.currentTarget.style.transform = "translateY(-1px)";
+        e.currentTarget.style.boxShadow = "0 8px 18px rgba(239,68,68,0.18)";
+      }}
+      onMouseLeave={(e) => {
+        e.currentTarget.style.background = "rgba(239,68,68,0.08)";
+        e.currentTarget.style.borderColor = "rgba(239,68,68,0.40)";
+        e.currentTarget.style.color = "#fca5a5";
+        e.currentTarget.style.transform = "translateY(0)";
+        e.currentTarget.style.boxShadow = "none";
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <path d="M4 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+        <path d="M9 7V5C9 4.44772 9.44772 4 10 4H14C14.5523 4 15 4.44772 15 5V7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+        <path d="M6 7L7 19C7.05236 19.5523 7.44772 20 8 20H16C16.5523 20 16.9476 19.5523 17 19L18 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+      </svg>
+      <span>{selectedTrashIds.length === 1 ? "Sil" : "Toplu Sil"}</span>
+    </button>
+  </div>
+)}
         {view !== "trash" && view !== "stats" && (
         <form onSubmit={addTodo} className="addForm">
           <input
@@ -1746,7 +2153,7 @@ export default function App() {
             onClick={openNativeDatePicker}
             onFocus={openNativeDatePicker}
             onChange={(e) => setNewDueDate(e.target.value)}
-            title="Son tarih"
+            title="Tarih Seç"
             style={{ height: 38 }}
           />
           <select
@@ -1781,325 +2188,675 @@ export default function App() {
             ))}
           </select>
           <button
-            className="btnPrimary"
             type="submit"
             disabled={!newTitle.trim()}
-            title="Görev ekle"
-            style={{ height: 38 }}
+            title="Görev Ekle"
+            style={{
+              height: 38,
+              paddingInline: 18,
+              borderRadius: 14,
+              border: "1px solid rgba(255,255,255,0.12)",
+              background: !newTitle.trim() ? "rgba(255,255,255,0.04)" : "rgba(96,165,250,0.10)",
+              color: !newTitle.trim() ? "rgba(255,255,255,0.38)" : "#dbeafe",
+              fontWeight: 600,
+              cursor: !newTitle.trim() ? "not-allowed" : "pointer",
+              transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease, box-shadow 0.18s ease",
+              boxShadow: !newTitle.trim() ? "none" : "inset 0 1px 0 rgba(255,255,255,0.04)",
+            }}
+            onMouseEnter={(e) => {
+              if (!newTitle.trim()) return;
+              e.currentTarget.style.background = "rgba(96,165,250,0.14)";
+              e.currentTarget.style.borderColor = "rgba(96,165,250,0.24)";
+              e.currentTarget.style.color = "#eff6ff";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }}
+            onMouseLeave={(e) => {
+              if (!newTitle.trim()) {
+                e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                e.currentTarget.style.color = "rgba(255,255,255,0.38)";
+                e.currentTarget.style.transform = "translateY(0)";
+                return;
+              }
+              e.currentTarget.style.background = "rgba(96,165,250,0.10)";
+              e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+              e.currentTarget.style.color = "#dbeafe";
+              e.currentTarget.style.transform = "translateY(0)";
+            }}
           >
-            Ekle
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, lineHeight: 0 }}>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <path
+                  d="M12 5V19"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+                <path
+                  d="M5 12H19"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span>Ekle</span>
+            </span>
           </button>
         </form>
         )}
         </div>
 
         {view !== "trash" && view !== "stats" && (
-          <div
-            className="categoryAddRow"
-            style={{
-              marginTop: 0,
-              display: "flex",
-              gap: 12,
-              alignItems: "center",
-              flexWrap: "wrap",
-              width: "100%",
-              position: filtersOpen ? "relative" : undefined,
-              zIndex: filtersOpen ? 28 : undefined,
-            }}
-          >
-            <input
-              ref={newCategoryInputRef}
-              className="input"
-              value={newCategoryName}
-              onChange={(e) => setNewCategoryName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault();
-                  createCategory();
-                }
-              }}
-              placeholder="Kategori ekle…"
-              style={{ height: 38 }}
-            />
-            <button
-                type="button"
-                className="btnPrimary"
-                onClick={() => {
-                  if (!newCategoryName.trim()) return;
-                  createCategory();
+            <div
+                className="categoryAddRow"
+                style={{
+                  marginTop: 0,
+                  display: "flex",
+                  gap: 12,
+                  alignItems: "center",
+                  flexWrap: "wrap",
+                  width: "100%",
+                  position: filtersOpen ? "relative" : undefined,
+                  zIndex: filtersOpen ? 28 : undefined,
                 }}
-                disabled={!newCategoryName.trim()}
-                title="Kategori ekle"
-                style={{ height: 44, paddingInline: 16 }}
             >
-              + Ekle
-            </button>
-
-            <div style={{ marginLeft: "auto", display: "flex", gap: 10, position: "relative", alignItems: "center" }}>
-              <button
-                type="button"
-                onClick={() => {
-                  setFiltersOpen((p) => {
-                    const next = !p;
-                    if (next) {
-                      setFilterSections({
-                        category: false,
-                        status: false,
-                        priority: false,
-                      });
-                    }
-                    return next;
-                  });
-                }}
-                title="Filtreleri aç / kapat"
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  borderBottom: filtersOpen ? "2px solid #22c55e" : "2px solid transparent",
-                  color: filtersOpen ? "#ffffff" : "#cbd5e1",
-                  padding: "10px 14px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  transition: "all 0.18s ease",
-                }}
-              >
-                Filtreler
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setCalendarOpen((prev) => !prev)}
-                title="Takvimi Aç / Kapat"
-                aria-label="Takvim"
-                style={{
-                  background: "transparent",
-                  border: "none",
-                  borderBottom: calendarOpen ? "2px solid #22c55e" : "2px solid transparent",
-                  color: calendarOpen ? "#ffffff" : "#cbd5e1",
-                  padding: "10px 14px",
-                  fontWeight: 600,
-                  cursor: "pointer",
-                  transition: "all 0.18s ease",
-                }}
-              >
-                📅
-              </button>
-
-              {filtersOpen && view === "todos" && (
-                <>
-                  {/* Dim + blur backdrop behind the popup */}
-                  <div
-                    onClick={() => setFiltersOpen(false)}
-                    style={{
-                      position: "fixed",
-                      inset: 0,
-                      backdropFilter: "blur(2px)",
-                      WebkitBackdropFilter: "blur(2px)",
-                      background: "linear-gradient(rgba(10,14,25,0.35), rgba(10,14,25,0.45))",
-                      zIndex: 40,
-                    }}
-                  />
-                  <div
-                      style={{
-                        position: "fixed",
-                        top: 200,
-                        right: 72,
-                        width: "min(520px, calc(100vw - 80px))",
-                        padding: 14,
-                        borderRadius: 18,
-                        background: "rgba(15, 23, 42, 0.96)",
-                        border: "1px solid rgba(255,255,255,0.10)",
-                        boxShadow: "0 18px 50px rgba(0,0,0,0.30)",
-                        backdropFilter: "blur(12px)",
-                        WebkitBackdropFilter: "blur(12px)",
-                        zIndex: 80,
-                        display: "flex",
-                        flexDirection: "column",
-                        gap: 10,
-                      }}
-                  >
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
-                    <div style={{ fontWeight: 700, fontSize: 15 }}>Filtreler</div>
-                    <button
-                      type="button"
-                      className="btnFilter"
-                      onClick={() => setFiltersOpen(false)}
-                      title="Filtreleri kapat"
-                      style={{ paddingInline: 12, minHeight: 36 }}
-                    >
-                      ❌
-                    </button>
-                  </div>
-
-                  <button
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                <button
                     type="button"
-                    className="btnFilter"
-                    onClick={() => toggleFilterSection("category")}
-                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600, minHeight: 48 }}
-                    title="Kategori filtrelerini aç / kapat"
+                    onClick={() => {
+                      setCategoryAddOpen((prev) => {
+                        const next = !prev;
+                        if (!prev) {
+                          window.requestAnimationFrame(() => newCategoryInputRef.current?.focus());
+                        }
+                        return next;
+                      });
+                    }}
+                    title={categoryAddOpen ? "Kategori Alanını Kapat" : "Kategori Ekle"}
+                    style={{
+                      height: 38,
+                      paddingInline: 16,
+                      borderRadius: 14,
+                      border: categoryAddOpen
+                          ? "1px solid rgba(96,165,250,0.22)"
+                          : "1px solid rgba(255,255,255,0.12)",
+                      background: categoryAddOpen
+                          ? "rgba(96,165,250,0.08)"
+                          : "rgba(255,255,255,0.04)",
+                      color: categoryAddOpen ? "#dbeafe" : "#e5e7eb",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = categoryAddOpen
+                          ? "rgba(96,165,250,0.10)"
+                          : "rgba(255,255,255,0.07)";
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = categoryAddOpen
+                          ? "rgba(96,165,250,0.08)"
+                          : "rgba(255,255,255,0.04)";
+                      e.currentTarget.style.transform = "translateY(0)";
+                    }}
+                >
+                  <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      xmlns="http://www.w3.org/2000/svg"
+                      aria-hidden="true"
                   >
-                    <span>🏷️ Kategori</span>
-                    <span>{filterSections.category ? "▾" : "▸"}</span>
-                  </button>
+                    <path d="M12 5V19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    <path d="M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                  </svg>
+                  <span>Kategori</span>
+                </button>
 
-                  {filterSections.category && categories.length > 0 && (
-                    <div className="categoryListRow" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {categoryAddOpen && (
+                    <>
+                      <input
+                          ref={newCategoryInputRef}
+                          className="input"
+                          value={newCategoryName}
+                          onChange={(e) => setNewCategoryName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              createCategory();
+                            }
+                            if (e.key === "Escape") {
+                              setCategoryAddOpen(false);
+                              setNewCategoryName("");
+                            }
+                          }}
+                          placeholder="Kategori ekle…"
+                          style={{ height: 38, maxWidth: 260 }}
+                      />
+
                       <button
-                        type="button"
-                        className={categoryFilter == null ? "categoryBadge active" : "btnFilter"}
-                        onClick={() => setCategoryFilter(null)}
-                        style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-                        title="Tüm kategoriler"
+                          type="button"
+                          onClick={() => {
+                            if (!newCategoryName.trim()) return;
+                            createCategory();
+                          }}
+                          disabled={!newCategoryName.trim()}
+                          title="Kategori Ekle"
+                          style={{
+                            height: 38,
+                            paddingInline: 16,
+                            borderRadius: 14,
+                            border: "1px solid rgba(255,255,255,0.12)",
+                            background: !newCategoryName.trim()
+                                ? "rgba(255,255,255,0.04)"
+                                : "rgba(255,255,255,0.05)",
+                            color: !newCategoryName.trim()
+                                ? "rgba(255,255,255,0.38)"
+                                : "#e5e7eb",
+                            fontWeight: 600,
+                            cursor: !newCategoryName.trim() ? "not-allowed" : "pointer",
+                            transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease",
+                          }}
+                          onMouseEnter={(e) => {
+                            if (!newCategoryName.trim()) return;
+                            e.currentTarget.style.background = "rgba(255,255,255,0.08)";
+                            e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)";
+                            e.currentTarget.style.color = "#ffffff";
+                            e.currentTarget.style.transform = "translateY(-1px)";
+                          }}
+                          onMouseLeave={(e) => {
+                            if (!newCategoryName.trim()) {
+                              e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                              e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                              e.currentTarget.style.color = "rgba(255,255,255,0.38)";
+                              e.currentTarget.style.transform = "translateY(0)";
+                              return;
+                            }
+                            e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                            e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                            e.currentTarget.style.color = "#e5e7eb";
+                            e.currentTarget.style.transform = "translateY(0)";
+                          }}
                       >
-                        Tümü ({Object.values(categoryCountById).reduce((sum, n) => sum + n, 0)})
+            <span style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, lineHeight: 0 }}>
+              <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+              >
+                <path
+                    d="M4.75 7.75C4.75 6.64543 5.64543 5.75 6.75 5.75H13.6716C14.202 5.75 14.7107 5.96071 15.0858 6.33579L18.1642 9.41421C18.5393 9.78929 18.75 10.298 18.75 10.8284V17.25C18.75 18.3546 17.8546 19.25 16.75 19.25H6.75C5.64543 19.25 4.75 18.3546 4.75 17.25V7.75Z"
+                    stroke="currentColor"
+                    strokeWidth="1.8"
+                    strokeLinejoin="round"
+                />
+                <path d="M12 10V16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                <path d="M9 13H15" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+              </svg>
+              <span>Ekle</span>
+            </span>
                       </button>
-                      {categories.map((c) => (
-                        <div
-                          key={c.id}
-                          className={categoryFilter === c.id ? "categoryBadge active" : "btnFilter"}
-                          style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
-                          onClick={() => setCategoryFilter((prev) => (prev === c.id ? null : c.id))}
-                          title="Kategoriye göre filtrele"
-                        >
-                          <span>{c.name} <span style={{ opacity: 0.7 }}>({categoryCountById[c.id] || 0})</span></span>
+                    </>
+                )}
+              </div>
+
+              <div style={{ marginLeft: "auto", display: "flex", gap: 10, position: "relative", alignItems: "center" }}>
+                <button
+                    type="button"
+                    onClick={() => {
+                      setFiltersOpen((p) => {
+                        const next = !p;
+                        if (next) {
+                          setFilterSections({
+                            category: false,
+                            status: false,
+                            priority: false,
+                          });
+                        }
+                        return next;
+                      });
+                    }}
+                    title="Filtreleri Aç / Kapat"
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      borderBottom: filtersOpen ? "2px solid #22c55e" : "2px solid transparent",
+                      color: filtersOpen ? "#ffffff" : "#cbd5e1",
+                      padding: "10px 14px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      transition: "all 0.18s ease",
+                    }}
+                >
+                  Filtreler
+                </button>
+
+                <button
+                    type="button"
+                    onClick={() => setCalendarOpen((prev) => !prev)}
+                    title="Takvimi Aç / Kapat"
+                    aria-label="Takvim"
+                    style={{
+                      background: "transparent",
+                      border: "none",
+                      borderBottom: calendarOpen ? "2px solid #22c55e" : "2px solid transparent",
+                      color: calendarOpen ? "#ffffff" : "#cbd5e1",
+                      padding: "10px 14px",
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      transition: "all 0.18s ease",
+                    }}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="1.8"/>
+                    <path d="M16 3V7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                    <path d="M8 3V7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                    <path d="M3 10H21" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"/>
+                  </svg>
+                </button>
+
+                {filtersOpen && view === "todos" && (
+                    <>
+                      <div
+                          onClick={() => setFiltersOpen(false)}
+                          style={{
+                            position: "fixed",
+                            inset: 0,
+                            backdropFilter: "blur(2px)",
+                            WebkitBackdropFilter: "blur(2px)",
+                            background: "linear-gradient(rgba(10,14,25,0.35), rgba(10,14,25,0.45))",
+                            zIndex: 40,
+                          }}
+                      />
+                      <div
+                          style={{
+                            position: "fixed",
+                            top: 200,
+                            right: 72,
+                            width: "min(520px, calc(100vw - 80px))",
+                            padding: 14,
+                            borderRadius: 18,
+                            background: "rgba(15, 23, 42, 0.96)",
+                            border: "1px solid rgba(255,255,255,0.10)",
+                            boxShadow: "0 18px 50px rgba(0,0,0,0.30)",
+                            backdropFilter: "blur(12px)",
+                            WebkitBackdropFilter: "blur(12px)",
+                            zIndex: 80,
+                            display: "flex",
+                            flexDirection: "column",
+                            gap: 10,
+                          }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                          <div style={{ fontWeight: 700, fontSize: 15 }}>Filtreler</div>
                           <button
-                            type="button"
-                            className="btnIcon"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              deleteCategory(c.id);
-                            }}
-                            title="Kategoriyi sil"
-                            style={{
-                              width: 26,
-                              height: 26,
-                              borderRadius: 10,
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              padding: 0,
-                              fontSize: "16px",
-                            }}
+                              type="button"
+                              onClick={() => setFiltersOpen(false)}
+                              title="Filtreleri kapat"
+                              aria-label="Filtreleri kapat"
+                              style={{
+                                background: "transparent",
+                                border: "none",
+                                padding: 4,
+                                cursor: "pointer",
+                                display: "flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                color: "#e5e7eb",
+                                transition: "transform 0.16s ease, color 0.16s ease"
+                              }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.color = "#f87171";
+                                e.currentTarget.style.transform = "scale(1.08)";
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.color = "#e5e7eb";
+                                e.currentTarget.style.transform = "scale(1)";
+                              }}
                           >
-                            🗑
+                            <svg
+                                width="20"
+                                height="20"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                xmlns="http://www.w3.org/2000/svg"
+                            >
+                              <path d="M6 6L18 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                              <path d="M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                            </svg>
                           </button>
                         </div>
-                      ))}
-                    </div>
-                  )}
 
-                  <button
-                    type="button"
-                    className="btnFilter"
-                    onClick={() => toggleFilterSection("status")}
-                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600, minHeight: 48 }}
-                    title="Durum filtrelerini aç / kapat"
-                  >
-                    <span>✅ Durum</span>
-                    <span>{filterSections.status ? "▾" : "▸"}</span>
-                  </button>
+                        <button
+                            type="button"
+                            className="btnFilter"
+                            onClick={() => toggleFilterSection("category")}
+                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600, minHeight: 48 }}
+                            title="Kategori filtrelerini Aç / Kapat"
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                              <path d="M20 13L11 22L2 13V4H11L20 13Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+                              <circle cx="7" cy="7" r="1.6" fill="currentColor"/>
+                            </svg>
+                            Kategori
+                          </span>
+                          <span>{filterSections.category ? "▾" : "▸"}</span>
+                        </button>
 
-                  {filterSections.status && (
-                    <div className="filters">
-                      <button
-                        type="button"
-                        className={filter === "all" ? "btnFilter active" : "btnFilter"}
-                        onClick={() => { setError(""); setSelectedDueDates([]); setFilter("all"); }}
-                      >
-                        Tümü ({statusCount.all || 0})
-                      </button>
-                      <button
-                        type="button"
-                        className={filter === "active" ? "btnFilter active" : "btnFilter"}
-                        onClick={() => { setError(""); setSelectedDueDates([]); setFilter("active"); }}
-                      >
-                        Aktif ({statusCount.active || 0})
-                      </button>
-                      <button
-                        type="button"
-                        className={filter === "completed" ? "btnFilter active" : "btnFilter"}
-                        onClick={() => { setError(""); setSelectedDueDates([]); setFilter("completed"); }}
-                      >
-                        Tamamlandı ({statusCount.completed || 0})
-                      </button>
-                    </div>
-                  )}
+                        {filterSections.category && categories.length > 0 && (
+                            <div className="categoryListRow" style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                              <button
+                                  type="button"
+                                  className={categoryFilter == null ? "categoryBadge active" : "btnFilter"}
+                                  onClick={() => setCategoryFilter(null)}
+                                  style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                                  title="Tüm kategoriler"
+                              >
+                                Tümü ({Object.values(categoryCountById).reduce((sum, n) => sum + n, 0)})
+                              </button>
+                              {categories.map((c) => (
+                                  <div
+                                      key={c.id}
+                                      className={categoryFilter === c.id ? "categoryBadge active" : "btnFilter"}
+                                      style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                                      onClick={() => setCategoryFilter((prev) => (prev === c.id ? null : c.id))}
+                                      title="Kategoriye göre filtrele"
+                                  >
+                                    <span>{c.name} <span style={{ opacity: 0.7 }}>({categoryCountById[c.id] || 0})</span></span>
+                                    <button
+                                        type="button"
+                                        className="btnIcon"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          deleteCategory(c.id);
+                                        }}
+                                        title="Kategoriyi sil"
+                                        style={{
+                                          width: 26,
+                                          height: 26,
+                                          borderRadius: 10,
+                                          display: "flex",
+                                          alignItems: "center",
+                                          justifyContent: "center",
+                                          padding: 0,
+                                          fontSize: "16px",
+                                        }}
+                                    >
+                                      🗑
+                                    </button>
+                                  </div>
+                              ))}
+                            </div>
+                        )}
 
-                  <button
-                    type="button"
-                    className="btnFilter"
-                    onClick={() => toggleFilterSection("priority")}
-                    style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600, minHeight: 48 }}
-                    title="Öncelik filtrelerini aç / kapat"
-                  >
-                    <span>⚡ Öncelik</span>
-                    <span>{filterSections.priority ? "▾" : "▸"}</span>
-                  </button>
+                        <button
+                            type="button"
+                            className="btnFilter"
+                            onClick={() => toggleFilterSection("status")}
+                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600, minHeight: 48 }}
+                            title="Durum filtrelerini Aç / Kapat"
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                              <circle cx="12" cy="12" r="8" stroke="currentColor" strokeWidth="1.8"/>
+                              <path d="M8.5 12.5L11 15L16 9.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+                            </svg>
+                            Durum
+                          </span>
+                          <span>{filterSections.status ? "▾" : "▸"}</span>
+                        </button>
 
-                  {filterSections.priority && (
-                    <div className="filters">
-                      <button
-                        type="button"
-                        className={priorityFilter === "all" ? "btnFilter active" : "btnFilter"}
-                        onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("all"); }}
-                        title="Öncelik filtresi"
-                      >
-                        Tümü ({statusCount.all || 0})
-                      </button>
-                      <button
-                        type="button"
-                        className={priorityFilter === "high" ? "btnFilter active" : "btnFilter"}
-                        onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("high"); }}
-                        title="HIGH"
-                      >
-                        High ({priorityCountByKey.high || 0})
-                      </button>
-                      <button
-                        type="button"
-                        className={priorityFilter === "medium" ? "btnFilter active" : "btnFilter"}
-                        onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("medium"); }}
-                        title="MEDIUM"
-                      >
-                        Medium ({priorityCountByKey.medium || 0})
-                      </button>
-                      <button
-                        type="button"
-                        className={priorityFilter === "low" ? "btnFilter active" : "btnFilter"}
-                        onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("low"); }}
-                        title="LOW"
-                      >
-                        Low ({priorityCountByKey.low || 0})
-                      </button>
-                    </div>
-                  )}
-                  </div>
-                </>
-              )}
+                        {filterSections.status && (
+                            <div className="filters">
+                              <button
+                                  type="button"
+                                  className={filter === "all" ? "btnFilter active" : "btnFilter"}
+                                  onClick={() => { setError(""); setSelectedDueDates([]); setFilter("all"); }}
+                              >
+                                Tümü ({statusCount.all || 0})
+                              </button>
+                              <button
+                                  type="button"
+                                  className={filter === "active" ? "btnFilter active" : "btnFilter"}
+                                  onClick={() => { setError(""); setSelectedDueDates([]); setFilter("active"); }}
+                              >
+                                Aktif ({statusCount.active || 0})
+                              </button>
+                              <button
+                                  type="button"
+                                  className={filter === "completed" ? "btnFilter active" : "btnFilter"}
+                                  onClick={() => { setError(""); setSelectedDueDates([]); setFilter("completed"); }}
+                              >
+                                Tamamlandı ({statusCount.completed || 0})
+                              </button>
+                            </div>
+                        )}
+
+                        <button
+                            type="button"
+                            className="btnFilter"
+                            onClick={() => toggleFilterSection("priority")}
+                            style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontWeight: 600, minHeight: 48 }}
+                            title="Öncelik filtrelerini Aç / Kapat"
+                        >
+                          <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                              <path d="M13 3L4 14H11L10 21L19 10H12L13 3Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round"/>
+                            </svg>
+                            Öncelik
+                          </span>
+                          <span>{filterSections.priority ? "▾" : "▸"}</span>
+                        </button>
+
+                        {filterSections.priority && (
+                            <div className="filters">
+                              <button
+                                  type="button"
+                                  className={priorityFilter === "all" ? "btnFilter active" : "btnFilter"}
+                                  onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("all"); }}
+                                  title="Öncelik filtresi"
+                              >
+                                Tümü ({statusCount.all || 0})
+                              </button>
+                              <button
+                                  type="button"
+                                  className={priorityFilter === "high" ? "btnFilter active" : "btnFilter"}
+                                  onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("high"); }}
+                                  title="HIGH"
+                              >
+                                High ({priorityCountByKey.high || 0})
+                              </button>
+                              <button
+                                  type="button"
+                                  className={priorityFilter === "medium" ? "btnFilter active" : "btnFilter"}
+                                  onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("medium"); }}
+                                  title="MEDIUM"
+                              >
+                                Medium ({priorityCountByKey.medium || 0})
+                              </button>
+                              <button
+                                  type="button"
+                                  className={priorityFilter === "low" ? "btnFilter active" : "btnFilter"}
+                                  onClick={() => { setError(""); setSelectedDueDates([]); setPriorityFilter("low"); }}
+                                  title="LOW"
+                              >
+                                Low ({priorityCountByKey.low || 0})
+                              </button>
+                            </div>
+                        )}
+                      </div>
+                    </>
+                )}
+              </div>
             </div>
-          </div>
         )}
 
+        {view === "todos" && !filtersOpen && (
+            (() => {
+              const chips = [];
+
+              if (filter !== "all") {
+                chips.push({
+                  key: "status",
+                  label: filter === "active" ? "Aktif" : "Tamamlandı",
+                  clear: () => setFilter("all"),
+                });
+              }
+
+              if (priorityFilter !== "all") {
+                chips.push({
+                  key: "priority",
+                  label: priorityFilter.charAt(0).toUpperCase() + priorityFilter.slice(1),
+                  clear: () => setPriorityFilter("all"),
+                });
+              }
+
+              if (categoryFilter != null) {
+                const cname = categoryNameById.get(Number(categoryFilter));
+                if (cname) {
+                  chips.push({
+                    key: "category",
+                    label: cname,
+                    clear: () => setCategoryFilter(null),
+                  });
+                }
+              }
+
+              if (selectedDueDates.length > 0) {
+                chips.push({
+                  key: "date",
+                  label: "Gün filtresi",
+                  clear: () => setSelectedDueDates([]),
+                });
+              }
+
+              if (query.trim()) {
+                chips.push({
+                  key: "query",
+                  label: `Arama: ${query.trim()}`,
+                  clear: () => setQuery(""),
+                });
+              }
+
+              if (chips.length === 0) return null;
+
+              return (
+                  <div
+                      style={{
+                        display: "flex",
+                        gap: 8,
+                        flexWrap: "wrap",
+                        marginTop: 6,
+                        marginBottom: 10,
+                      }}
+                  >
+                    {chips.map((chip) => (
+                        <button
+                            key={chip.key}
+                            type="button"
+                            className="btnFilter"
+                            onClick={chip.clear}
+                            title="Filtreyi kaldır"
+                            style={{
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: 6,
+                              paddingInline: 10,
+                              height: 30,
+                              fontSize: 13,
+                              borderRadius: 999,
+                            }}
+                        >
+                          <span>{chip.label}</span>
+                          <span style={{ opacity: 0.6 }}>✕</span>
+                        </button>
+                    ))}
+                  </div>
+              );
+            })()
+        )}
 
         {view !== "trash" && view !== "stats" && (
-            <div
-              className="searchRow"
-              style={{
-                marginBottom: 12,
-              }}
-            >
+          <div
+            className="searchRow"
+            style={{
+              marginBottom: 12,
+              display: "flex",
+              flexDirection: "column",
+              gap: 6,
+            }}
+          >
+            <div style={{ position: "relative", width: "100%" }}>
               <input
-                  className="searchInput"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="🔍 Notlarda ara..."
+                className="searchInput"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="🔍 Notlarda ara..."
+                style={{ paddingRight: query.trim() ? 36 : undefined }}
               />
 
               {query.trim() && (
-                  <button type="button" className="btnFilter" onClick={() => setQuery("")} title="Aramayı temizle">
-                    Temizle
-                  </button>
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  title="Aramayı temizle"
+                  style={{
+                    position: "absolute",
+                    right: 8,
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    width: 26,
+                    height: 26,
+                    borderRadius: 8,
+                    border: "1px solid rgba(255,255,255,0.10)",
+                    background: "rgba(255,255,255,0.04)",
+                    color: "#cbd5e1",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    cursor: "pointer",
+                    fontSize: 14,
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.10)";
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                  }}
+                >
+                  ✕
+                </button>
               )}
             </div>
+
+            {query.trim() && (
+              <div
+                style={{
+                  fontSize: 13,
+                  opacity: 0.7,
+                  paddingLeft: 2,
+                }}
+              >
+                {listTodos.length} sonuç bulundu
+              </div>
+            )}
+          </div>
         )}
 
 
@@ -2158,6 +2915,7 @@ export default function App() {
           <div className="grid">
             {calendarCells.map((c) => {
               const count = dueCountByDay[c.key] || 0;
+              // const hasManyTasks = count > 1;
               const isToday = c.key === todayStr;
               const isSelected = selectedDueDates.includes(c.key);
               const isPastDueDay = count > 0 && c.key < todayStr;
@@ -2167,12 +2925,12 @@ export default function App() {
                   key={c.key + (c.inMonth ? "m" : "o")}
                   type="button"
                   className={
-                      "day" +
-                      (c.inMonth ? "" : " other") +
-                      (count ? " has" : "") +
-                      (isToday ? " today" : "") +
-                      (isSelected ? " selected" : "") +
-                      (isPastDueDay ? " overdue" : "")
+                    "day" +
+                    (c.inMonth ? "" : " other") +
+                    (count ? " has" : "") +
+                    (isToday ? " today" : "") +
+                    (isSelected ? " selected" : "") +
+                    (isPastDueDay ? " overdue" : "")
                   }
                   style={
                     isToday
@@ -2180,15 +2938,20 @@ export default function App() {
                           border: "1.5px solid rgba(34,197,94,0.7)",
                           boxShadow: "0 0 0 2px rgba(34,197,94,0.10)",
                         }
-                      : undefined
+                      : isPastDueDay
+                        ? {
+                            border: "1.5px solid rgba(239,68,68,0.42)",
+                            boxShadow: "0 0 0 2px rgba(239,68,68,0.10), 0 8px 18px rgba(239,68,68,0.10)",
+                          }
+                        : undefined
                   }
                   onClick={() => {
                     if (!count) return;
 
                     setSelectedDueDates((cur) =>
-                        cur.includes(c.key)
-                            ? cur.filter((d) => d !== c.key)
-                            : [...cur, c.key]
+                      cur.includes(c.key)
+                        ? cur.filter((d) => d !== c.key)
+                        : [...cur, c.key]
                     );
                   }}
                   title={count ? `${count} görev` : ""}
@@ -2206,8 +2969,21 @@ export default function App() {
 
         {view === "stats" ? (
           <div style={{ marginTop: 24, marginBottom: 24 }}>
-            <h2>📊 Görev İstatistikleri</h2>
-
+            <h2 style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <svg
+                  width="22"
+                  height="22"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+              >
+                <path d="M4 20V10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                <path d="M10 20V4" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                <path d="M16 20V13" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                <path d="M22 20V7" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+              </svg>
+              <span>Görev İstatistikleri</span>
+            </h2>
             <div
               style={{
                 display: "grid",
@@ -2231,33 +3007,81 @@ export default function App() {
               >
                 <h3 style={{ margin: 0, marginBottom: 14 }}>Genel</h3>
                 <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
-                  <div
-                    style={{
-                      width: 160,
-                      height: 160,
-                      borderRadius: "50%",
-                      background: donutBackground(generalChartData),
-                      position: "relative",
-                      flex: "0 0 auto",
-                    }}
+                  <svg
+                    width="160"
+                    height="160"
+                    viewBox="0 0 160 160"
+                    style={{ flex: "0 0 auto" }}
                   >
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 22,
-                        borderRadius: "50%",
-                        background: "#111827",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        textAlign: "center",
-                      }}
-                    >
-                      <div style={{ fontSize: 12, opacity: 0.72 }}>Toplam</div>
-                      <div style={{ fontSize: 28, fontWeight: 700 }}>{statsOverview.total}</div>
-                    </div>
-                  </div>
+                    <circle
+                      cx="80"
+                      cy="80"
+                      r="70"
+                      stroke="rgba(255,255,255,0.10)"
+                      strokeWidth="18"
+                      fill="none"
+                    />
+
+                    {(() => {
+                      const total = Math.max(statsOverview.total || 0, 1);
+                      let cumulative = 0;
+
+                      return generalChartData
+                        .filter((item) => item.value > 0)
+                        .map((item, idx) => {
+                          const percent = (item.value / total) * 100;
+                          const dashOffset = 25 - cumulative;
+                          cumulative += percent;
+
+                          return (
+                            <circle
+                              key={item.label}
+                              cx="80"
+                              cy="80"
+                              r="70"
+                              fill="none"
+                              stroke={item.color}
+                              strokeWidth="18"
+                              strokeLinecap="round"
+                              pathLength="100"
+                              strokeDasharray={`0 100`}
+                              strokeDashoffset={dashOffset}
+                              transform="rotate(-90 80 80)"
+                            >
+                              <animate
+                                attributeName="stroke-dasharray"
+                                from="0 100"
+                                to={`${percent} ${100 - percent}`}
+                                dur="0.9s"
+                                begin={`${idx * 0.16}s`}
+                                fill="freeze"
+                                calcMode="spline"
+                                keySplines="0.22 1 0.36 1"
+                              />
+                            </circle>
+                          );
+                        });
+                    })()}
+
+                    <foreignObject x="0" y="0" width="160" height="160">
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          textAlign: "center",
+                          color: "white",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        <div style={{ fontSize: 12, opacity: 0.72 }}>Toplam</div>
+                        <div style={{ fontSize: 28, fontWeight: 700 }}>{statsOverview.total}</div>
+                      </div>
+                    </foreignObject>
+                  </svg>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 180, flex: 1 }}>
                     {generalChartData.map((item) => (
@@ -2303,7 +3127,7 @@ export default function App() {
               >
                 <h3 style={{ margin: 0, marginBottom: 14 }}>Kategoriye Göre</h3>
                 {statsByCategory.length === 0 ? (
-                  <div className="hint">Hiç kategori yok.</div>
+                  <div className="hint">Henüz kategori eklenmedi.</div>
                 ) : (
                   <ul
                     style={{
@@ -2331,7 +3155,9 @@ export default function App() {
                               height: 8,
                               borderRadius: 999,
                               width: `${(cat.total / maxCategoryTotal) * 100}%`,
-                              transition: "width 0.4s",
+                              transition: "width 1.15s ease",
+                              animation: "statsBarIn 1.15s ease both",
+                              transformOrigin: "left center",
                             }}
                           />
                         </div>
@@ -2370,7 +3196,9 @@ export default function App() {
                             height: 8,
                             borderRadius: 999,
                             width: `${(p.total / maxPriorityTotal) * 100}%`,
-                            transition: "width 0.4s",
+                            transition: "width 1.15s ease",
+                            animation: "statsBarIn 1.15s ease both",
+                            transformOrigin: "left center",
                           }}
                         />
                       </div>
@@ -2390,35 +3218,131 @@ export default function App() {
               >
                 <h3 style={{ margin: 0, marginBottom: 14 }}>Son Tarihe Göre</h3>
                 <div style={{ display: "flex", gap: 18, alignItems: "center", flexWrap: "wrap" }}>
-                  <div
-                    style={{
-                      width: 160,
-                      height: 160,
-                      borderRadius: "50%",
-                      background: donutBackground(dueChartData),
-                      position: "relative",
-                      flex: "0 0 auto",
-                    }}
+                  <svg
+                    width="160"
+                    height="160"
+                    viewBox="0 0 160 160"
+                    style={{ flex: "0 0 auto" }}
                   >
-                    <div
-                      style={{
-                        position: "absolute",
-                        inset: 22,
-                        borderRadius: "50%",
-                        background: "#111827",
-                        display: "flex",
-                        flexDirection: "column",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        textAlign: "center",
-                      }}
-                    >
-                      <div style={{ fontSize: 12, opacity: 0.72 }}>Tarihli</div>
-                      <div style={{ fontSize: 28, fontWeight: 700 }}>
-                        {statsByDue.today + statsByDue.future + statsByDue.overdue}
+                    <circle
+                      cx="80"
+                      cy="80"
+                      r="70"
+                      stroke="rgba(255,255,255,0.10)"
+                      strokeWidth="18"
+                      fill="none"
+                    />
+
+                    {(() => {
+                      const totalAll = Math.max(
+                          statsByDue.today + statsByDue.future + statsByDue.overdue + statsByDue.none,
+                          1
+                      );
+
+                      const datedTotal = Math.max(
+                          statsByDue.today + statsByDue.future + statsByDue.overdue,
+                          1
+                      );
+
+                      const noneItem = dueChartData.find(
+                          (item) => item.label === "Tarih Belirlenmemiş" && item.value > 0
+                      );
+
+                      const datedItems = dueChartData.filter(
+                          (item) => item.label !== "Tarih Belirlenmemiş" && item.value > 0
+                      );
+
+                      let cumulativeAll = 0;
+                      const allSegments = dueChartData
+                          .filter((item) => item.value > 0)
+                          .map((item) => {
+                            const percent = (item.value / totalAll) * 100;
+                            const dashOffset = 25 - cumulativeAll;
+                            cumulativeAll += percent;
+                            return { ...item, percent, dashOffset };
+                          });
+
+                      let cumulativeDated = 0;
+                      const animatedDatedSegments = datedItems.map((item, idx) => {
+                        const percent = (item.value / datedTotal) * 100;
+                        const dashOffset = 25 - cumulativeDated;
+                        cumulativeDated += percent;
+                        return { ...item, idx, percent, dashOffset };
+                      });
+
+                      const noneSegment = noneItem
+                          ? allSegments.find((item) => item.label === "Tarih Belirlenmemiş")
+                          : null;
+
+                      return [
+                        noneSegment ? (
+                            <circle
+                                key="none-segment"
+                                cx="80"
+                                cy="80"
+                                r="70"
+                                fill="none"
+                                stroke={noneSegment.color}
+                                strokeWidth="18"
+                                strokeLinecap="butt"
+                                pathLength="100"
+                                strokeDasharray={`${noneSegment.percent} ${100 - noneSegment.percent}`}
+                                strokeDashoffset={noneSegment.dashOffset}
+                                transform="rotate(-90 80 80)"
+                            />
+                        ) : null,
+
+                        ...animatedDatedSegments.map((item) => (
+                            <circle
+                                key={item.label}
+                                cx="80"
+                                cy="80"
+                                r="70"
+                                fill="none"
+                                stroke={item.color}
+                                strokeWidth="18"
+                                strokeLinecap="round"
+                                pathLength="100"
+                                strokeDasharray={`0 100`}
+                                strokeDashoffset={item.dashOffset}
+                                transform="rotate(-90 80 80)"
+                            >
+                              <animate
+                                  attributeName="stroke-dasharray"
+                                  from="0 100"
+                                  to={`${item.percent} ${100 - item.percent}`}
+                                  dur="1s"
+                                  begin={`${item.idx * 0.12}s`}
+                                  fill="freeze"
+                                  calcMode="spline"
+                                  keySplines="0.22 1 0.36 1"
+                              />
+                            </circle>
+                        )),
+                      ];
+                    })()}
+
+                    <foreignObject x="0" y="0" width="160" height="160">
+                      <div
+                        style={{
+                          width: "100%",
+                          height: "100%",
+                          display: "flex",
+                          flexDirection: "column",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          textAlign: "center",
+                          color: "white",
+                          fontFamily: "inherit",
+                        }}
+                      >
+                        <div style={{ fontSize: 12, opacity: 0.72 }}>Tarih Belirlenmiş</div>
+                        <div style={{ fontSize: 28, fontWeight: 700 }}>
+                          {statsByDue.today + statsByDue.future + statsByDue.overdue}
+                        </div>
                       </div>
-                    </div>
-                  </div>
+                    </foreignObject>
+                  </svg>
 
                   <div style={{ display: "flex", flexDirection: "column", gap: 10, minWidth: 190, flex: 1 }}>
                     {dueChartData.map((item) => (
@@ -2456,7 +3380,7 @@ export default function App() {
           {((view === "trash" && trashTodos.length === 0) || (view !== "trash" && listTodos.length === 0)) && !loading ? (
             <div className="hint">
               {view === "trash"
-                ? "Çöp kutusu boş."
+                ? "Çöp Kutusu Boş."
                 : selectedDueDates.length
                   ? "Seçili günlere atanmış görev yok."
                   : query.trim()
@@ -2470,7 +3394,78 @@ export default function App() {
             </div>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-              {groupedListTodos.map((group) => (
+              {!loading && view !== "stats" && groupedListTodos.length === 0 && (
+                  (() => {
+                    const hasActiveFilters =
+                        !!query.trim() ||
+                        selectedDueDates.length > 0 ||
+                        categoryFilter != null ||
+                        priorityFilter !== "all" ||
+                        filter !== "all";
+
+                    const selectedCategory =
+                        categoryFilter != null
+                            ? categories.find((c) => String(c.id) === String(categoryFilter))
+                            : null;
+
+                    if (view === "trash") {
+                      return renderEmptyState({
+                        accent: "#94a3b8",
+                        icon: (
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M4 7H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                              <path d="M9 7V5C9 4.44772 9.44772 4 10 4H14C14.5523 4 15 4.44772 15 5V7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                              <path d="M6 7L7 19C7.05236 19.5523 7.44772 20 8 20H16C16.5523 20 16.9476 19.5523 17 19L18 7" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                            </svg>
+                        ),
+                        title: "Çöp kutusu boş",
+                        description: "Silinen görevler burada görünür. Bir görevi sildiğinde geri yüklemek için bu alandan ulaşabilirsin.",
+                      });
+                    }
+
+                    if (selectedCategory) {
+                      return renderEmptyState({
+                        accent: "#60a5fa",
+                        icon: (
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M20 13L11 22L2 13V4H11L20 13Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+                              <circle cx="7" cy="7" r="1.6" fill="currentColor" />
+                            </svg>
+                        ),
+                        title: `${selectedCategory.name} kategorisinde görev yok`,
+                        description: "İlk görevi eklemek için yukarıdaki formu kullan ya da filtreleri temizleyerek diğer görevleri görüntüle.",
+                      });
+                    }
+
+                    if (hasActiveFilters) {
+                      return renderEmptyState({
+                        accent: "#f59e0b",
+                        icon: (
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                              <path d="M4 5H20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                              <path d="M7 12H17" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                              <path d="M10 19H14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+                            </svg>
+                        ),
+                        title: "Bu filtrede görev bulunamadı",
+                        description: "Arama veya filtre kriterlerini değiştirerek tekrar deneyebilirsin. Görevler farklı bir kategori ya da öncelikte olabilir.",
+                      });
+                    }
+
+                    return renderEmptyState({
+                      accent: "#22c55e",
+                      icon: (
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M12 5V19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                            <path d="M5 12H19" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                          </svg>
+                      ),
+                      title: "Henüz görev yok",
+                      description: "İlk görevini ekleyerek başlayabilirsin. Tarih, öncelik ve kategori belirleyerek düzenli bir liste oluştur.",
+                    });
+                  })()
+              )}
+              {groupedListTodos.length > 0 && groupedListTodos.map((group) => (
                 <div key={group.key}>
               {group.title ? (
                 <>
@@ -2524,7 +3519,7 @@ export default function App() {
                           type="button"
                           className="btnFilter"
                           onClick={() => toggleCategoryCollapse(group.key)}
-                          title="Kategori grubunu aç / kapat"
+                          title="Kategori grubunu Aç / Kapat"
                           style={{
                             display: "inline-flex",
                             alignItems: "center",
@@ -2578,23 +3573,41 @@ export default function App() {
         (draggingId === t.id ? " dragging" : "") +
         (dragOverId === t.id ? " dragOver" : "")
     }
-    style={
-      draggingId === t.id
-        ? {
-            transform: "scale(1.02)",
-            boxShadow: "0 12px 28px rgba(0,0,0,0.28)",
-            opacity: 0.72,
-            zIndex: 10,
-          }
-        : dragOverId === t.id
-        ? undefined
-        : recentlyAddedId === t.id
-        ? {
-            boxShadow: "0 0 0 2px rgba(34,197,94,0.35)",
-            background: "rgba(34,197,94,0.06)",
-          }
-        : undefined
-    }
+    style={(() => {
+      const isSelectedCard = view === "trash"
+        ? selectedTrashIds.includes(t.id)
+        : selectedTodoIds.includes(t.id);
+
+      if (draggingId === t.id) {
+        return {
+          transform: "scale(1.02)",
+          boxShadow: "0 12px 28px rgba(0,0,0,0.28)",
+          opacity: 0.72,
+          zIndex: 10,
+        };
+      }
+
+      if (dragOverId === t.id) {
+        return undefined;
+      }
+
+      if (recentlyAddedId === t.id) {
+        return {
+          boxShadow: "0 0 0 2px rgba(34,197,94,0.35)",
+          background: "rgba(34,197,94,0.06)",
+        };
+      }
+
+      if (isSelectedCard) {
+        return {
+          boxShadow: "0 0 0 1px rgba(96,165,250,0.22), 0 0 0 4px rgba(96,165,250,0.08)",
+          background: "linear-gradient(180deg, rgba(96,165,250,0.05), rgba(96,165,250,0.02))",
+          position: "relative",
+        };
+      }
+
+      return undefined;
+    })()}
     draggable={view !== "trash"}
     onDragStart={() => {
       if (view === "trash") return;
@@ -2627,7 +3640,22 @@ export default function App() {
       });
     }}
   >
-    <div className="left">
+    <div className="left" style={{ position: "relative" }}>
+      {((view === "trash" ? selectedTrashIds.includes(t.id) : selectedTodoIds.includes(t.id))) && (
+        <span
+          aria-hidden="true"
+          style={{
+            position: "absolute",
+            left: -12,
+            top: 6,
+            bottom: 6,
+            width: 3,
+            borderRadius: 999,
+            background: "linear-gradient(180deg, rgba(96,165,250,0.95), rgba(59,130,246,0.65))",
+            boxShadow: "0 0 0 1px rgba(96,165,250,0.08), 0 0 12px rgba(59,130,246,0.18)",
+          }}
+        />
+      )}
       <button
         type="button"
         className={
@@ -2652,7 +3680,48 @@ export default function App() {
             : (selectedTodoIds.includes(t.id) ? "Seçimi kaldır" : "Görevi seç")
         }
       >
-        {(view === "trash" ? selectedTrashIds.includes(t.id) : selectedTodoIds.includes(t.id)) ? "✓" : "○"}
+        {(view === "trash" ? selectedTrashIds.includes(t.id) : selectedTodoIds.includes(t.id)) ? (
+            <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+            >
+              <rect x="5" y="7" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+              <path
+                  d="M10 11.5L12 13.5L15.5 10"
+                  stroke="currentColor"
+                  strokeWidth="1.8"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+              />
+              <path
+                  d="M9 5H17C18.1046 5 19 5.89543 19 7V15"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+              />
+            </svg>
+        ) : (
+            <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+            >
+              <rect x="5" y="7" width="10" height="10" rx="2" stroke="currentColor" strokeWidth="1.8" />
+              <path
+                  d="M9 5H17C18.1046 5 19 5.89543 19 7V15"
+                  stroke="currentColor"
+                  strokeWidth="1.6"
+                  strokeLinecap="round"
+              />
+            </svg>
+        )}
       </button>
 
       {editingId === t.id && view !== "trash" ? (
@@ -2702,18 +3771,22 @@ export default function App() {
             title={view === "trash" ? "Çöp kutusunda düzenleme kapalı" : "Düzenlemek için çift tıkla"}
             style={{ minWidth: 0 }}
           >
-            {t.title}
+            {renderHighlightedText(t.title, query)}
           </span>
 
           {plainTextFromHtml(t.description).trim() !== "" && (
             <>
               <div
                 className={"todoDesc" + (expandedDescId === t.id ? " expanded" : "")}
-                style={{ wordBreak: "break-word", opacity: 0.78, minWidth: 0 }}
-                dangerouslySetInnerHTML={{
-                  __html: DOMPurify.sanitize(t.description || ""),
+                style={{
+                  wordBreak: "break-word",
+                  opacity: 0.78,
+                  minWidth: 0,
+                  whiteSpace: "pre-wrap",
                 }}
-              />
+              >
+                {renderHighlightedText(plainTextFromHtml(t.description || ""), query)}
+              </div>
 
               {(() => {
                 const desc = plainTextFromHtml(t.description || "");
@@ -2733,8 +3806,61 @@ export default function App() {
                       setExpandedDescId((cur) => (cur === t.id ? null : t.id));
                     }}
                     title={expandedDescId === t.id ? "Daha az göster" : "Devamını gör"}
+                    style={{
+                      marginTop: 6,
+                      height: 26,
+                      paddingInline: 12,
+                      borderRadius: 11,
+                      border: "1px solid rgba(255,255,255,0.10)",
+                      background: "rgba(255,255,255,0.03)",
+                      color: "#cbd5f5",
+                      fontWeight: 600,
+                      fontSize: 12,
+                      cursor: "pointer",
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                      transition: "all 0.18s ease",
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = "rgba(255,255,255,0.07)";
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)";
+                      e.currentTarget.style.transform = "translateY(-1px)";
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = "rgba(255,255,255,0.03)";
+                      e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)";
+                      e.currentTarget.style.transform = "translateY(0)";
+                    }}
                   >
-                    {expandedDescId === t.id ? "Daha az göster" : "Devamını gör"}
+                    {expandedDescId === t.id ? (
+                      <>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                          <path
+                            d="M6 15L12 9L18 15"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span>Daha az göster</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                          <path
+                            d="M6 9L12 15L18 9"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                        <span>Devamını gör</span>
+                      </>
+                    )}
                   </button>
                 );
               })()}
@@ -2756,8 +3882,38 @@ export default function App() {
                   className="select"
                   value={descCategoryId}
                   onChange={(e) => setDescCategoryId(e.target.value)}
+                  style={{
+                    height: 38,
+                    minWidth: 172,
+                    padding: "0 38px 0 12px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    backgroundColor: "rgba(255,255,255,0.04)",
+                    color: "#ffffff",
+                    fontWeight: 600,
+                    outline: "none",
+                    appearance: "none",
+                    WebkitAppearance: "none",
+                    MozAppearance: "none",
+                    backgroundImage:
+                        "linear-gradient(45deg, transparent 50%, #cbd5e1 50%), linear-gradient(135deg, #cbd5e1 50%, transparent 50%)",
+                    backgroundPosition:
+                        "calc(100% - 18px) calc(50% - 3px), calc(100% - 10px) calc(50% - 3px)",
+                    backgroundSize: "8px 8px, 8px 8px",
+                    backgroundRepeat: "no-repeat",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+                    transition: "border-color 0.18s ease, background 0.18s ease",
+                    maxWidth: 220
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(96,165,250,0.45)";
+                    e.currentTarget.style.backgroundColor = "rgba(96,165,250,0.08)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                    e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)";
+                  }}
                   title="Kategori"
-                  style={{ maxWidth: 220 }}
                 >
                   <option value="none">Yok</option>
                   {categories.map((c) => (
@@ -2771,8 +3927,38 @@ export default function App() {
                   className="select"
                   value={descPriority}
                   onChange={(e) => setDescPriority(e.target.value)}
+                  style={{
+                    height: 38,
+                    minWidth: 154,
+                    padding: "0 38px 0 12px",
+                    borderRadius: 12,
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    backgroundColor: "rgba(255,255,255,0.04)",
+                    color: "#ffffff",
+                    fontWeight: 600,
+                    outline: "none",
+                    appearance: "none",
+                    WebkitAppearance: "none",
+                    MozAppearance: "none",
+                    backgroundImage:
+                        "linear-gradient(45deg, transparent 50%, #cbd5e1 50%), linear-gradient(135deg, #cbd5e1 50%, transparent 50%)",
+                    backgroundPosition:
+                        "calc(100% - 18px) calc(50% - 3px), calc(100% - 10px) calc(50% - 3px)",
+                    backgroundSize: "8px 8px, 8px 8px",
+                    backgroundRepeat: "no-repeat",
+                    boxShadow: "inset 0 1px 0 rgba(255,255,255,0.03)",
+                    transition: "border-color 0.18s ease, background 0.18s ease",
+                    maxWidth: 180
+                  }}
+                  onFocus={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(251,191,36,0.45)";
+                    e.currentTarget.style.backgroundColor = "rgba(251,191,36,0.08)";
+                  }}
+                  onBlur={(e) => {
+                    e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+                    e.currentTarget.style.backgroundColor = "rgba(255,255,255,0.04)";
+                  }}
                   title="Öncelik"
-                  style={{ maxWidth: 180 }}
                 >
                   <option value="LOW">LOW</option>
                   <option value="MEDIUM">MEDIUM</option>
@@ -2913,32 +4099,149 @@ export default function App() {
 
     {view === "trash" ? (
       <div style={{ display: "flex", gap: 8 }}>
-        <button type="button" className="btnFilter" onClick={() => restoreTodo(t.id)} title="Geri yükle">
-          Geri Yükle
+        <button
+          type="button"
+          onClick={() => restoreTodo(t.id)}
+          title="Geri Yükle"
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 14,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.02)",
+            color: "#cbd5e1",
+            transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease",
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "rgba(96,165,250,0.08)";
+            e.currentTarget.style.borderColor = "rgba(96,165,250,0.24)";
+            e.currentTarget.style.color = "#bfdbfe";
+            e.currentTarget.style.transform = "translateY(-1px)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "rgba(255,255,255,0.02)";
+            e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+            e.currentTarget.style.color = "#cbd5e1";
+            e.currentTarget.style.transform = "translateY(0)";
+          }}
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M8 7L4 12L8 17"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M5 12H14.5C17.5376 12 20 9.53757 20 6.5V6"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
       </div>
     ) : (
       <div className="todoActions">
         <button
-          type="button"
-          draggable={false}
-          className={t.completed ? "checkBtn done" : "checkBtn"}
-          style={{ marginTop: 8 }}
-          onMouseDown={(e) => e.stopPropagation()}
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (view !== "trash") toggleTodo(t.id);
-          }}
-          title={view === "trash" ? "Çöp kutusunda durum değişmez" : "Aktif / Tamamlandı"}
-          disabled={view === "trash"}
+            type="button"
+            draggable={false}
+            onMouseDown={(e) => e.stopPropagation()}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              toggleTodo(t.id);
+            }}
+            title={t.completed ? "Aktif yap" : "Tamamlandı olarak işaretle"}
+            aria-label={t.completed ? "Aktif yap" : "Tamamlandı olarak işaretle"}
+            style={{
+              width: 42,
+              height: 42,
+              borderRadius: 14,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              padding: 0,
+              border: t.completed
+                  ? "1px solid rgba(34,197,94,0.28)"
+                  : "1px solid rgba(255,255,255,0.12)",
+              background: t.completed
+                  ? "rgba(34,197,94,0.12)"
+                  : "rgba(255,255,255,0.02)",
+              color: t.completed ? "#86efac" : "#e5e7eb",
+              transition:
+                  "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease",
+              cursor: "pointer",
+              flex: "0 0 auto",
+            }}
+            onMouseEnter={(e) => {
+              if (t.completed) {
+                e.currentTarget.style.background = "rgba(34,197,94,0.16)";
+                e.currentTarget.style.borderColor = "rgba(34,197,94,0.38)";
+              } else {
+                e.currentTarget.style.background = "rgba(255,255,255,0.05)";
+                e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)";
+              }
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.background = t.completed
+                  ? "rgba(34,197,94,0.12)"
+                  : "rgba(255,255,255,0.02)";
+              e.currentTarget.style.borderColor = t.completed
+                  ? "rgba(34,197,94,0.28)"
+                  : "rgba(255,255,255,0.12)";
+              e.currentTarget.style.color = t.completed ? "#86efac" : "#e5e7eb";
+              e.currentTarget.style.transform = "translateY(0)";
+            }}
         >
-          {t.completed ? <span className="checkIcon">✓</span> : ""}
+          {t.completed ? (
+              <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+              >
+                <path
+                    d="M6 12.5L10 16.5L18 7.5"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                />
+              </svg>
+          ) : (
+              <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  xmlns="http://www.w3.org/2000/svg"
+                  aria-hidden="true"
+              >
+                <circle cx="12" cy="12" r="8.25" stroke="currentColor" strokeWidth="1.8" />
+              </svg>
+          )}
         </button>
         <button
           type="button"
           draggable={false}
-          className={t.pinned ? "btnFilter active" : "btnFilter"}
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.preventDefault();
@@ -2946,13 +4249,58 @@ export default function App() {
             togglePinTodo(t.id);
           }}
           title={t.pinned ? "Sabitlemeyi kaldır" : "Sabitle"}
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 14,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            border: t.pinned ? "1px solid rgba(34,197,94,0.28)" : "1px solid rgba(255,255,255,0.12)",
+            background: t.pinned ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.02)",
+            color: t.pinned ? "#86efac" : "#cbd5e1",
+            transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease",
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) => {
+            if (t.pinned) {
+              e.currentTarget.style.background = "rgba(34,197,94,0.16)";
+              e.currentTarget.style.borderColor = "rgba(34,197,94,0.38)";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            } else {
+              e.currentTarget.style.background = "rgba(34,197,94,0.08)";
+              e.currentTarget.style.borderColor = "rgba(34,197,94,0.24)";
+              e.currentTarget.style.color = "#bbf7d0";
+              e.currentTarget.style.transform = "translateY(-1px)";
+            }
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = t.pinned ? "rgba(34,197,94,0.12)" : "rgba(255,255,255,0.02)";
+            e.currentTarget.style.borderColor = t.pinned ? "rgba(34,197,94,0.28)" : "rgba(255,255,255,0.12)";
+            e.currentTarget.style.color = t.pinned ? "#86efac" : "#cbd5e1";
+            e.currentTarget.style.transform = "translateY(0)";
+          }}
         >
-          📌
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M8 3.75H16C17.2426 3.75 18.25 4.75736 18.25 6V20.25L12 15.75L5.75 20.25V6C5.75 4.75736 6.75736 3.75 8 3.75Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+            />
+          </svg>
         </button>
         <button
           type="button"
           draggable={false}
-          className="btnSecondary"
           onMouseDown={(e) => e.stopPropagation()}
           onClick={(e) => {
             e.preventDefault();
@@ -2975,8 +4323,54 @@ export default function App() {
             setDescPriority(willOpen ? (t.priority || "MEDIUM") : "MEDIUM");
           }}
           title="Açıklama yaz"
+          style={{
+            width: 42,
+            height: 42,
+            borderRadius: 14,
+            display: "inline-flex",
+            alignItems: "center",
+            justifyContent: "center",
+            padding: 0,
+            border: "1px solid rgba(255,255,255,0.12)",
+            background: "rgba(255,255,255,0.02)",
+            color: "#cbd5e1",
+            transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease",
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "rgba(251,191,36,0.08)";
+            e.currentTarget.style.borderColor = "rgba(251,191,36,0.24)";
+            e.currentTarget.style.color = "#fde68a";
+            e.currentTarget.style.transform = "translateY(-1px)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "rgba(255,255,255,0.02)";
+            e.currentTarget.style.borderColor = "rgba(255,255,255,0.12)";
+            e.currentTarget.style.color = "#cbd5e1";
+            e.currentTarget.style.transform = "translateY(0)";
+          }}
         >
-          ✏️
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M4.75 19.25L8.8 18.35L17.9 9.25C18.681 8.469 18.681 7.203 17.9 6.422L17.578 6.1C16.797 5.319 15.531 5.319 14.75 6.1L5.65 15.2L4.75 19.25Z"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinejoin="round"
+            />
+            <path
+              d="M13.5 7.35L16.65 10.5"
+              stroke="currentColor"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+            />
+          </svg>
         </button>
       </div>
     )}
@@ -2998,4 +4392,34 @@ export default function App() {
       </div>
     </div>
   );
+  // --- Highlight helpers ---
+  function escapeRegExp(value) {
+    return String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  function renderHighlightedText(text, search) {
+    const source = String(text ?? "");
+    const needle = String(search ?? "").trim();
+
+    if (!needle) return source;
+
+    const parts = source.split(new RegExp(`(${escapeRegExp(needle)})`, "gi"));
+
+    return parts.map((part, idx) =>
+      part.toLowerCase() === needle.toLowerCase() ? (
+        <span
+          key={idx}
+          style={{
+            background: "rgba(251,191,36,0.22)",
+            color: "#fde68a",
+            borderRadius: 6,
+            padding: "0 2px",
+            boxShadow: "inset 0 0 0 1px rgba(251,191,36,0.14)",
+          }}
+        >
+          {part}
+        </span>
+      ) : part
+    );
+  }
 }

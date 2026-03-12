@@ -183,7 +183,7 @@ body::before {
 }
 
 /* Filtreleri Göster/Gizle butonu aktifken de normal filtre rengiyle kalsın */
-button[title="Filtreleri aç / kapat"].btnFilter.active {
+button[title="Filtreleri Aç / Kapat"].btnFilter.active {
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
 }
@@ -263,6 +263,50 @@ button[title="LOW"].btnFilter.active {
   to {
     opacity: 1;
     transform: translateX(0) translateY(0);
+  }
+}
+
+@keyframes statsBarIn {
+  from {
+    transform: scaleX(0);
+    opacity: 0.55;
+  }
+  to {
+    transform: scaleX(1);
+    opacity: 1;
+  }
+}
+
+@keyframes statsDonutIn {
+  from {
+    transform: scale(0.92);
+    opacity: 0;
+    filter: blur(1px);
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+    filter: blur(0);
+  }
+}
+
+@keyframes donutSpinIn {
+  from {
+    transform: rotate(-180deg);
+    opacity: 0;
+  }
+  to {
+    transform: rotate(-90deg);
+    opacity: 1;
+  }
+}
+
+@keyframes donutDraw {
+  from {
+    stroke-dashoffset: 440;
+  }
+  to {
+    stroke-dashoffset: 0;
   }
 }
 
