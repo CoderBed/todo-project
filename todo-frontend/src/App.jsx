@@ -4,10 +4,6 @@ import logo from "./assets/logo.png";
 import DOMPurify from "dompurify";
 
 const RAW_API_BASE = (import.meta?.env?.VITE_API_BASE ?? "").trim();
-// If VITE_API_BASE is not set (or empty), default to Spring Boot (8080)
-// Examples:
-//   VITE_API_BASE=http://localhost:8080
-//   VITE_API_BASE=/api  (when using a Vite proxy)
 const API_BASE = (RAW_API_BASE ? RAW_API_BASE : "http://localhost:8080").replace(/\/$/, "");
 
 const API_TODOS = `${API_BASE}/api/todos`;
@@ -327,6 +323,20 @@ export default function App() {
     setSelectedTrashIds([]);
   }
 
+  function getTodoDate(todo, keys) {
+    if (!todo || !Array.isArray(keys)) return null;
+
+    for (const key of keys) {
+      const value = todo[key];
+      if (!value) continue;
+
+      const dt = new Date(value);
+      if (!Number.isNaN(dt.getTime())) return dt;
+    }
+
+    return null;
+  }
+
   async function bulkHardDeleteSelectedTrash() {
     if (!selectedTrashIds.length) return;
 
@@ -526,6 +536,9 @@ export default function App() {
 
       setTokenAndPersist(data.token);
       setAuthPassword("");
+      setView("todos");
+      setFiltersOpen(false);
+      setCalendarOpen(false);
       showToast(authMode === "login" ? "Giriş başarılı ✅" : "Kayıt başarılı ✅");
       await loadTodos(data.token);
       await loadCategories(data.token);
@@ -2804,57 +2817,93 @@ export default function App() {
           >
             <div style={{ position: "relative", width: "100%" }}>
               <input
-                className="searchInput"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="🔍 Notlarda ara..."
-                style={{ paddingRight: query.trim() ? 36 : undefined }}
+                  className="searchInput"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="🔍 Notlarda ara..."
+                  style={{
+                    paddingRight: query.trim() ? 38 : undefined,
+                    border: query.trim() ? "1px solid rgba(96,165,250,0.28)" : undefined,
+                    boxShadow: query.trim() ? "0 0 0 3px rgba(96,165,250,0.10)" : undefined,
+                    transition: "border-color 0.18s ease, box-shadow 0.18s ease",
+                  }}
               />
 
               {query.trim() && (
-                <button
-                  type="button"
-                  onClick={() => setQuery("")}
-                  title="Aramayı temizle"
-                  style={{
-                    position: "absolute",
-                    right: 8,
-                    top: "50%",
-                    transform: "translateY(-50%)",
-                    width: 26,
-                    height: 26,
-                    borderRadius: 8,
-                    border: "1px solid rgba(255,255,255,0.10)",
-                    background: "rgba(255,255,255,0.04)",
-                    color: "#cbd5e1",
-                    display: "flex",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    cursor: "pointer",
-                    fontSize: 14,
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.background = "rgba(255,255,255,0.10)";
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.background = "rgba(255,255,255,0.04)";
-                  }}
-                >
-                  ✕
-                </button>
+                  <button
+                      type="button"
+                      onClick={() => setQuery("")}
+                      title="Aramayı temizle"
+                      aria-label="Aramayı temizle"
+                      style={{
+                        position: "absolute",
+                        right: 8,
+                        top: "50%",
+                        transform: "translateY(-50%)",
+                        width: 24,
+                        height: 24,
+                        borderRadius: 7,
+                        border: "1px solid rgba(255,255,255,0.10)",
+                        background: "rgba(255,255,255,0.04)",
+                        color: "#cbd5e1",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        cursor: "pointer",
+                        padding: 0,
+                        transition: "background 0.18s ease, border-color 0.18s ease, transform 0.18s ease, color 0.18s ease",
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.10)";
+                        e.currentTarget.style.borderColor = "rgba(255,255,255,0.18)";
+                        e.currentTarget.style.color = "#ffffff";
+                        e.currentTarget.style.transform = "translateY(-50%) scale(1.03)";
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.background = "rgba(255,255,255,0.04)";
+                        e.currentTarget.style.borderColor = "rgba(255,255,255,0.10)";
+                        e.currentTarget.style.color = "#cbd5e1";
+                        e.currentTarget.style.transform = "translateY(-50%) scale(1)";
+                      }}
+                  >
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+                      <path d="M7 7L17 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                      <path d="M17 7L7 17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                    </svg>
+                  </button>
               )}
             </div>
 
             {query.trim() && (
-              <div
-                style={{
-                  fontSize: 13,
-                  opacity: 0.7,
-                  paddingLeft: 2,
-                }}
-              >
-                {listTodos.length} sonuç bulundu
-              </div>
+                <div
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 8,
+                      minHeight: 20,
+                      paddingLeft: 2,
+                      color: "#94a3b8",
+                      fontSize: 12,
+                      fontWeight: 600,
+                      letterSpacing: "0.01em",
+                    }}
+                >
+  <span
+      style={{
+        width: 6,
+        height: 6,
+        borderRadius: 999,
+        background: listTodos.length > 0 ? "#60a5fa" : "#f59e0b",
+        boxShadow: listTodos.length > 0
+            ? "0 0 0 4px rgba(96,165,250,0.12)"
+            : "0 0 0 4px rgba(245,158,11,0.12)",
+        flex: "0 0 auto",
+      }}
+  />
+                  <span>
+    {listTodos.length > 0 ? `${listTodos.length} sonuç bulundu` : "Sonuç bulunamadı"}
+  </span>
+                </div>
             )}
           </div>
         )}
@@ -3373,6 +3422,106 @@ export default function App() {
                   </div>
                 </div>
               </section>
+
+              {/* --- Tamamlanma Oranı --- */}
+              <section
+                style={{
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 18,
+                  padding: 18,
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
+                }}
+              >
+                <h3 style={{ margin: 0, marginBottom: 14 }}>Tamamlanma Oranı</h3>
+
+                {(() => {
+                  const total = Math.max(statsOverview.total || 0, 1);
+                  const completed = statsOverview.completed || 0;
+                  const percent = Math.round((completed / total) * 100);
+
+                  return (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ fontSize: 28, fontWeight: 700 }}>{percent}%</div>
+
+                      <div
+                        style={{
+                          background: "rgba(255,255,255,0.10)",
+                          height: 10,
+                          borderRadius: 999,
+                          width: "100%",
+                        }}
+                      >
+                        <div
+                          style={{
+                            background: "#22c55e",
+                            height: 10,
+                            borderRadius: 999,
+                            width: `${percent}%`,
+                            transition: "width 1.15s ease",
+                            animation: "statsBarIn 1.15s ease both",
+                            transformOrigin: "left center",
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ fontSize: 13, opacity: 0.75 }}>
+                        {completed} / {statsOverview.total} görev tamamlandı
+                      </div>
+                    </div>
+                  );
+                })()}
+              </section>
+
+              {/* --- Geciken Görev Oranı --- */}
+              <section
+                style={{
+                  border: "1px solid rgba(255,255,255,0.10)",
+                  background: "rgba(255,255,255,0.04)",
+                  borderRadius: 18,
+                  padding: 18,
+                  boxShadow: "0 6px 20px rgba(0,0,0,0.10)",
+                }}
+              >
+                <h3 style={{ margin: 0, marginBottom: 14 }}>Geciken Görev Oranı</h3>
+
+                {(() => {
+                  const total = Math.max(statsOverview.total || 0, 1);
+                  const overdue = statsByDue.overdue || 0;
+                  const percent = Math.round((overdue / total) * 100);
+
+                  return (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                      <div style={{ fontSize: 28, fontWeight: 700 }}>{percent}%</div>
+
+                      <div
+                        style={{
+                          background: "rgba(255,255,255,0.10)",
+                          height: 10,
+                          borderRadius: 999,
+                          width: "100%",
+                        }}
+                      >
+                        <div
+                          style={{
+                            background: "#ef4444",
+                            height: 10,
+                            borderRadius: 999,
+                            width: `${percent}%`,
+                            transition: "width 1.15s ease",
+                            animation: "statsBarIn 1.15s ease both",
+                            transformOrigin: "left center",
+                          }}
+                        />
+                      </div>
+
+                      <div style={{ fontSize: 13, opacity: 0.75 }}>
+                        {overdue} görev gecikmiş durumda
+                      </div>
+                    </div>
+                  );
+                })()}
+              </section>
             </div>
           </div>
         ) : (
@@ -3805,7 +3954,7 @@ export default function App() {
                       e.stopPropagation();
                       setExpandedDescId((cur) => (cur === t.id ? null : t.id));
                     }}
-                    title={expandedDescId === t.id ? "Daha az göster" : "Devamını gör"}
+                    title={expandedDescId === t.id ? "Daha Az Göster" : "Devamını Gör"}
                     style={{
                       marginTop: 6,
                       height: 26,
@@ -3845,7 +3994,7 @@ export default function App() {
                             strokeLinejoin="round"
                           />
                         </svg>
-                        <span>Daha az göster</span>
+                        <span>Daha Az Göster</span>
                       </>
                     ) : (
                       <>
@@ -3858,7 +4007,7 @@ export default function App() {
                             strokeLinejoin="round"
                           />
                         </svg>
-                        <span>Devamını gör</span>
+                        <span>Devamını Gör</span>
                       </>
                     )}
                   </button>
